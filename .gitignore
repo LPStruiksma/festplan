@@ -17,6 +17,9 @@ dist-ssr
 .env.*
 !.env.example
 
+# Supabase CLI cache — contains project refs and connection strings
+supabase/.temp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
