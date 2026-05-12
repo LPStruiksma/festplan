@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { withSync, registerWriteHandler } from './sync-state'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // localStorage key helpers
@@ -138,22 +139,28 @@ export async function loadSchedule(userId, festKey) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase writes
-// All three functions are intentionally thin — debouncing and the
-// localStorage write-through live in the component (handleResolve /
-// handleRate) so the component stays in full control of timing.
+//
+// Each write is split into:
+//   _raw*  — private, throws on error, used by withSync() and the drain handler
+//   public — exported, wraps _raw* in withSync() so failures are retried and
+//            surfaced via the SyncProvider state machine
+//
+// The _raw* functions are also registered with registerWriteHandler() so
+// drainPendingWrites() can replay any writes that were queued in localStorage
+// after a failed session.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Record which festival the user is actively planning.
- * Called once on SchedulePage mount; also refreshes the localStorage key
- * so SchedulePage can still read festId synchronously on re-mount.
+ * Not wrapped in withSync — this is a lightweight housekeeping write that
+ * doesn't affect user data if it fails; the localStorage key is the source
+ * of truth for SchedulePage's first paint anyway.
  *
  * @param {string} userId
  * @param {string} festKey  e.g. "lowlands", "coachella"
  */
 export async function saveFestivalKey(userId, festKey) {
   if (!userId || !festKey) return
-  // Keep localStorage current — SchedulePage still reads from here on first paint.
   localStorage.setItem(LS_FESTIVAL_KEY, festKey)
   const { error } = await supabase
     .from('user_schedules')
@@ -163,6 +170,27 @@ export async function saveFestivalKey(userId, festKey) {
     )
   if (error) console.warn('[festplan] saveFestivalKey:', error.message)
 }
+
+// ── Resolution ───────────────────────────────────────────────────────────────
+
+async function _rawSaveResolution(userId, festKey, conflictKey, chosenArtist) {
+  const [artist_a, artist_b] = conflictKey.split('|||')
+  const { error } = await supabase
+    .from('schedule_resolutions')
+    .upsert(
+      {
+        user_id:       userId,
+        festival_key:  festKey,
+        artist_a,
+        artist_b,
+        chosen_artist: chosenArtist,
+      },
+      { onConflict: 'user_id,festival_key,artist_a,artist_b' }
+    )
+  if (error) throw new Error(error.message)
+}
+
+registerWriteHandler('resolution', _rawSaveResolution)
 
 /**
  * Upsert a single conflict resolution.
@@ -176,34 +204,17 @@ export async function saveFestivalKey(userId, festKey) {
  * @param {string} conflictKey   "ArtistA|||ArtistB" (A < B alphabetically)
  * @param {string} chosenArtist  Must equal ArtistA or ArtistB
  */
-export async function saveResolution(userId, festKey, conflictKey, chosenArtist) {
-  if (!userId || !festKey) return
-  const [artist_a, artist_b] = conflictKey.split('|||')
-  const { error } = await supabase
-    .from('schedule_resolutions')
-    .upsert(
-      {
-        user_id:        userId,
-        festival_key:   festKey,
-        artist_a,
-        artist_b,
-        chosen_artist:  chosenArtist,
-      },
-      { onConflict: 'user_id,festival_key,artist_a,artist_b' }
-    )
-  if (error) console.warn('[festplan] saveResolution:', error.message)
+export function saveResolution(userId, festKey, conflictKey, chosenArtist) {
+  if (!userId || !festKey) return Promise.resolve()
+  return withSync(
+    () => _rawSaveResolution(userId, festKey, conflictKey, chosenArtist),
+    { type: 'resolution', args: [userId, festKey, conflictKey, chosenArtist] }
+  )
 }
 
-/**
- * Upsert a single artist rating (1–5 stars).
- *
- * @param {string} userId
- * @param {string} festKey
- * @param {string} artistName
- * @param {number} rating   Integer 1–5
- */
-export async function saveRating(userId, festKey, artistName, rating) {
-  if (!userId || !festKey) return
+// ── Rating ────────────────────────────────────────────────────────────────────
+
+async function _rawSaveRating(userId, festKey, artistName, rating) {
   const { error } = await supabase
     .from('artist_ratings')
     .upsert(
@@ -215,12 +226,28 @@ export async function saveRating(userId, festKey, artistName, rating) {
       },
       { onConflict: 'user_id,festival_key,artist_name' }
     )
-  if (error) console.warn('[festplan] saveRating:', error.message)
+  if (error) throw new Error(error.message)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Friends
-// ─────────────────────────────────────────────────────────────────────────────
+registerWriteHandler('rating', _rawSaveRating)
+
+/**
+ * Upsert a single artist rating (1–5 stars).
+ *
+ * @param {string} userId
+ * @param {string} festKey
+ * @param {string} artistName
+ * @param {number} rating   Integer 1–5
+ */
+export function saveRating(userId, festKey, artistName, rating) {
+  if (!userId || !festKey) return Promise.resolve()
+  return withSync(
+    () => _rawSaveRating(userId, festKey, artistName, rating),
+    { type: 'rating', args: [userId, festKey, artistName, rating] }
+  )
+}
+
+// ── Friends ───────────────────────────────────────────────────────────────────
 
 /**
  * Load the friends list for a festival from Supabase.
@@ -253,33 +280,14 @@ export async function loadFriends(userId, festKey) {
   return data   // [{ name, artists, source_user_id }]
 }
 
-/**
- * Replace the friends list for a festival in Supabase.
- *
- * Uses delete-then-insert (same pattern as saveArtistsRemote) to keep row
- * ordering clean. Safe for the 3-friend max enforced in the UI.
- *
- * position is derived from the array index so that a subsequent loadFriends
- * call returns rows in the same order, preserving the FRIEND_COLORS mapping.
- *
- * @param {string} userId
- * @param {string} festKey
- * @param {Array<{ name: string, artists: string[] }>} friends
- */
-export async function saveFriends(userId, festKey, friends) {
-  if (!userId || !festKey) return
-
+async function _rawSaveFriends(userId, festKey, friends) {
   const { error: delErr } = await supabase
     .from('friends')
     .delete()
     .eq('user_id', userId)
     .eq('festival_key', festKey)
 
-  if (delErr) {
-    console.warn('[festplan] saveFriends (delete):', delErr.message)
-    return
-  }
-
+  if (delErr) throw new Error(delErr.message)
   if (!friends.length) return
 
   const { error: insErr } = await supabase
@@ -289,9 +297,31 @@ export async function saveFriends(userId, festKey, friends) {
         user_id:      userId,
         festival_key: festKey,
         name,
-        artists,        // text[] — Supabase JS handles JS arrays natively
-        position,       // 0-based; ORDER BY position ASC on read
+        artists,
+        position,
       }))
     )
-  if (insErr) console.warn('[festplan] saveFriends (insert):', insErr.message)
+  if (insErr) throw new Error(insErr.message)
+}
+
+registerWriteHandler('friends', _rawSaveFriends)
+
+/**
+ * Replace the friends list for a festival in Supabase.
+ *
+ * Uses delete-then-insert to keep row ordering clean.
+ * The whole operation is wrapped in withSync so a partial failure (delete OK,
+ * insert fails) will retry the full delete+insert — safe because delete is
+ * idempotent for an already-empty table.
+ *
+ * @param {string} userId
+ * @param {string} festKey
+ * @param {Array<{ name: string, artists: string[] }>} friends
+ */
+export function saveFriends(userId, festKey, friends) {
+  if (!userId || !festKey) return Promise.resolve()
+  return withSync(
+    () => _rawSaveFriends(userId, festKey, friends),
+    { type: 'friends', args: [userId, festKey, friends] }
+  )
 }

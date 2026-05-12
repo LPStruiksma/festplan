@@ -1,8 +1,9 @@
 import AuthCallback from './pages/AuthCallback'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
+import { SyncProvider, drainPendingWrites } from './lib/sync-state'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
@@ -10,6 +11,7 @@ import JoinPage from './pages/JoinPage'
 
 export default function App() {
   const [session, setSession] = useState(undefined)
+  const drainedRef = useRef(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -27,6 +29,16 @@ export default function App() {
   // The DB trigger handles first-time creation; this keeps metadata fresh.
   useEffect(() => {
     if (session) ensureProfile(session)
+  }, [session])
+
+  // On first sign-in after app boot, drain any writes that failed in a
+  // previous session and were queued in festplan_pending_writes[].
+  // drainPendingWrites() is a no-op when the queue is empty.
+  useEffect(() => {
+    if (session && !drainedRef.current) {
+      drainedRef.current = true
+      drainPendingWrites()
+    }
   }, [session])
 
   if (session === undefined) {
@@ -62,23 +74,25 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
-      />
-      <Route
-        path="/setup"
-        element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/schedule"
-        element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
-      />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      {/* /join/:slug works whether logged in or not — JoinPage handles both */}
-      <Route path="/join/:slug" element={<JoinPage session={session} />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <SyncProvider>
+      <Routes>
+        <Route
+          path="/"
+          element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
+        />
+        <Route
+          path="/setup"
+          element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/schedule"
+          element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
+        />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        {/* /join/:slug works whether logged in or not — JoinPage handles both */}
+        <Route path="/join/:slug" element={<JoinPage session={session} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </SyncProvider>
   )
 }

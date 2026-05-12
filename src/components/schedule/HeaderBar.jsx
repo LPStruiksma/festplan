@@ -1,7 +1,8 @@
 import { T, pillBtn } from '../../lib/ui'
+import { useSync } from '../../lib/sync-state'
 
 /**
- * Sticky top bar: back button, festival name, and action buttons.
+ * Sticky top bar: back button, festival name, action buttons, and sync pill.
  *
  * Props:
  *   fa               — festival accent colour
@@ -18,6 +19,36 @@ export default function HeaderBar({
   fa, fest, isLineupOnly, toast,
   onBack, onExportCalendar, onExportPoster, onBuildPlaylist, hasSpotifyToken,
 }) {
+  const { status, retry } = useSync()
+
+  // ── Sync pill config ──────────────────────────────────────────────────────
+  const pill = status === 'syncing'
+    ? {
+        bg:     'rgba(255, 183, 77, 0.13)',
+        color:  '#ffb74d',
+        label:  null,   // rendered as spinner + text below
+        title:  'Saving your changes…',
+        cursor: 'default',
+        onClick: undefined,
+      }
+    : status === 'error'
+    ? {
+        bg:     'rgba(244, 67, 54, 0.13)',
+        color:  '#f44336',
+        label:  '! Sync error — tap to retry',
+        title:  'Some changes failed to save. Click to retry.',
+        cursor: 'pointer',
+        onClick: retry,
+      }
+    : /* idle */ {
+        bg:     'rgba(76, 175, 80, 0.12)',
+        color:  '#66bb6a',
+        label:  '● Synced',
+        title:  'All changes saved',
+        cursor: 'default',
+        onClick: undefined,
+      }
+
   return (
     <header style={{
       background: 'var(--fp-s1)',
@@ -56,7 +87,7 @@ export default function HeaderBar({
         }}>{fest.emoji} {fest.name}</div>
       </div>
 
-      {/* Spotify playlist — only when provider_token is available */}
+      {/* Spotify playlist — only when a Spotify token is available */}
       {!isLineupOnly && hasSpotifyToken && (
         <button
           onClick={onBuildPlaylist}
@@ -104,6 +135,48 @@ export default function HeaderBar({
           </button>
         </>
       )}
+
+      {/* Sync status pill */}
+      <div
+        role={pill.onClick ? 'button' : undefined}
+        tabIndex={pill.onClick ? 0 : undefined}
+        onClick={pill.onClick}
+        onKeyDown={pill.onClick ? e => e.key === 'Enter' && pill.onClick() : undefined}
+        title={pill.title}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '4px 10px',
+          borderRadius: 99,
+          background: pill.bg,
+          color: pill.color,
+          fontSize: 11,
+          fontFamily: T.body,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+          cursor: pill.cursor,
+          userSelect: 'none',
+          transition: 'opacity 0.2s',
+        }}
+      >
+        {status === 'syncing' ? (
+          <>
+            {/* Spinning dot */}
+            <span style={{
+              display: 'inline-block',
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              border: `2px solid ${pill.color}`,
+              borderTopColor: 'transparent',
+              animation: 'fp-spin 0.7s linear infinite',
+              flexShrink: 0,
+            }} />
+            Saving…
+          </>
+        ) : pill.label}
+      </div>
     </header>
   )
 }

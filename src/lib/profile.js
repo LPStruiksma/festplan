@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { withSync, registerWriteHandler } from './sync-state'
 
 const LS_ARTISTS_KEY = 'festplan_artists'
 
@@ -84,6 +85,35 @@ export async function loadArtists(userId) {
 }
 
 /**
+ * Raw Supabase write — throws on error so withSync() can detect failures.
+ * Registered as the 'artists' drain handler so queued writes can be replayed.
+ */
+async function _rawSaveArtistsRemote(userId, artists) {
+  const { error: delErr } = await supabase
+    .from('user_artists')
+    .delete()
+    .eq('user_id', userId)
+    .is('festival_key', null)
+
+  if (delErr) throw new Error(delErr.message)
+  if (!artists.length) return
+
+  const { error: insErr } = await supabase
+    .from('user_artists')
+    .insert(
+      artists.map((artist_name, position) => ({
+        user_id:      userId,
+        festival_key: null,   // global list — not yet tied to a festival
+        artist_name,
+        position,             // 0-based; ORDER BY position ASC on read
+      }))
+    )
+  if (insErr) throw new Error(insErr.message)
+}
+
+registerWriteHandler('artists', _rawSaveArtistsRemote)
+
+/**
  * Persist the artist list to Supabase only (no localStorage write).
  *
  * Implements a delete-then-insert pattern to preserve insertion order
@@ -91,39 +121,18 @@ export async function loadArtists(userId) {
  * shot without a stored procedure.
  *
  * Called from the debounced auto-save effect in SetupPage so that
- * rapid edits only fire a single network write.
+ * rapid edits only fire a single network write.  Wrapped in withSync so
+ * transient failures are retried and surfaced in the sync pill.
  *
- * @param {string} userId
+ * @param {string}   userId
  * @param {string[]} artists  Ordered list of artist name strings
  */
-export async function saveArtistsRemote(userId, artists) {
-  if (!userId) return
-
-  // Remove every row in the global list for this user
-  const { error: delErr } = await supabase
-    .from('user_artists')
-    .delete()
-    .eq('user_id', userId)
-    .is('festival_key', null)
-
-  if (delErr) {
-    console.warn('[festplan] saveArtists (delete):', delErr.message)
-    return
-  }
-
-  if (!artists.length) return
-
-  const { error: insErr } = await supabase
-    .from('user_artists')
-    .insert(
-      artists.map((artist_name, position) => ({
-        user_id: userId,
-        festival_key: null,   // global list — not yet tied to a festival
-        artist_name,
-        position,             // 0-based; ORDER BY position ASC on read
-      }))
-    )
-  if (insErr) console.warn('[festplan] saveArtists (insert):', insErr.message)
+export function saveArtistsRemote(userId, artists) {
+  if (!userId) return Promise.resolve()
+  return withSync(
+    () => _rawSaveArtistsRemote(userId, artists),
+    { type: 'artists', args: [userId, artists] }
+  )
 }
 
 /**
