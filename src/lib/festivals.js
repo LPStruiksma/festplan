@@ -38,6 +38,7 @@ export const FRIEND_COLORS = ['#22d3ee', '#f472b6', '#a3e635', '#fb923c']
 export const FESTIVALS = {
   coachella: {
     id: 'coachella', name: 'Coachella 2026', location: 'Indio, CA', emoji: '🌵',
+    startDate: '2026-04-10', endDate: '2026-04-12',
     days: ['Fri Apr 10', 'Sat Apr 11', 'Sun Apr 12'],
     stages: ['Coachella Stage', 'Outdoor Theatre', 'Mojave', 'Gobi', 'Sahara', 'Yuma'],
     lineup: [
@@ -101,6 +102,7 @@ export const FESTIVALS = {
 
   primavera: {
     id: 'primavera', name: 'Primavera Sound 2026', location: 'Barcelona, Spain', emoji: '🌊',
+    startDate: '2026-06-04', endDate: '2026-06-07',
     days: ['Thu Jun 4', 'Fri Jun 5', 'Sat Jun 6', 'Sun Jun 7'],
     stages: ['Primavera Stage', 'Pitchfork Stage', 'Desperados Stage', 'Ray-Ban Stage', 'Green Stage'],
     lineup: [
@@ -150,6 +152,7 @@ export const FESTIVALS = {
 
   lowlands: {
     id: 'lowlands', name: 'Lowlands 2026', location: 'Biddinghuizen, NL', emoji: '⛺',
+    startDate: '2026-08-13', endDate: '2026-08-16',
     days: ['Thu Aug 13', 'Fri Aug 14', 'Sat Aug 15', 'Sun Aug 16'],
     stages: ['Alpha', 'Beta', 'Bravo', 'Gamma', 'India'],
     lineup: [
@@ -178,6 +181,7 @@ export const FESTIVALS = {
   glastonbury: {
     id: 'glastonbury', name: 'Glastonbury 2026', location: 'Worthy Farm, Pilton, UK', emoji: '🎸',
     // 2026 is a fallow year; lineup uses confirmed 2025 artists as placeholders.
+    startDate: '2026-06-26', endDate: '2026-06-28',
     days: ['Fri Jun 26', 'Sat Jun 27', 'Sun Jun 28'],
     stages: ['Pyramid Stage', 'Other Stage', 'West Holts', 'Park Stage', 'John Peel Stage'],
     lineup: [
@@ -224,6 +228,7 @@ export const FESTIVALS = {
 
   bestkeptsecret: {
     id: 'bestkeptsecret', name: "Best Kept Secret '26", location: 'Hilvarenbeek, NL', emoji: '🌲',
+    startDate: '2026-06-11', endDate: '2026-06-13',
     days: ['Thu Jun 11', 'Fri Jun 12', 'Sat Jun 13'],
     stages: ['Main Stage', 'Patronaat', 'Forest Stage', 'Greenhouse'],
     lineup: [

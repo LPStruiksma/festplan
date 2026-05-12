@@ -27,6 +27,8 @@
  *     "location":  "Pilton, Somerset, UK",
  *     "emoji":     "🎸",
  *     "accentColor": "#82d96e",          // optional
+ *     "startDate": "2025-06-26",         // optional ISO date; enables accurate iCal exports
+ *     "endDate":   "2025-06-29",         // optional ISO date
  *     "days":    ["Thu Jun 26", "Fri Jun 27", "Sat Jun 28", "Sun Jun 29"],
  *     "stages":  ["Pyramid Stage", "Other Stage", "West Holts", "Park Stage"],
  *     "lineup":  [
@@ -129,6 +131,8 @@ const metaRow = {
   accent_color:  festival.accentColor  ?? null,
   days:          festival.days,
   stages:        festival.stages,
+  start_date:    festival.startDate    ?? null,
+  end_date:      festival.endDate      ?? null,
   updated_at:    new Date().toISOString(),
 }
 

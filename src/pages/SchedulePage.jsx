@@ -10,6 +10,7 @@ import { createInvite } from '../lib/invites'
 import { useGroupSync } from '../lib/realtime'
 import { T } from '../lib/ui'
 import { getValidSpotifyToken } from '../lib/spotify-auth'
+import { getSlotDate } from '../lib/dates'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import HeaderBar      from '../components/schedule/HeaderBar'
@@ -215,20 +216,31 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
 
   // ── Export: iCal ─────────────────────────────────────────────────────────
   const exportCalendar = () => {
-    const year = parseInt(fest.name.match(/\d{4}/)?.[0] ?? new Date().getFullYear(), 10)
-    const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 }
     const pad2 = n => String(n).padStart(2, '0')
 
-    const parseSlotDate = (dayStr, timeStr) => {
-      const parts = dayStr.split(' ')
-      const month = MONTHS[parts[1]]
-      const dayNum = parseInt(parts[2], 10)
-      const [hStr, mStr] = timeStr.split(':')
-      const hour = parseInt(hStr, 10)
-      const min  = parseInt(mStr, 10)
-      const calDay = hour < 6 ? dayNum + 1 : dayNum
-      return new Date(year, month - 1, calDay, hour, min, 0)
-    }
+    // ── Date resolver ──────────────────────────────────────────────────────
+    // Prefer the festival's ISO startDate (accurate, handles post-midnight
+    // slots correctly across month/year boundaries).
+    // Fall back to the legacy regex-year + MONTHS parse for live-discovered
+    // festivals that haven't been seeded with startDate yet.
+    const resolveSlotDate = fest.startDate
+      ? (dayIndex, timeStr) => getSlotDate(fest.startDate, dayIndex, timeStr)
+      : (() => {
+          // Legacy path: extract year from name, parse "Mon Jan 1" day strings.
+          const year   = parseInt(fest.name.match(/\d{4}/)?.[0] ?? new Date().getFullYear(), 10)
+          const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 }
+          return (dayIndex, timeStr) => {
+            const parts  = fest.days[dayIndex].split(' ')
+            const month  = MONTHS[parts[1]]
+            const dayNum = parseInt(parts[2], 10)
+            const [hStr, mStr] = timeStr.split(':')
+            const hour   = parseInt(hStr, 10)
+            const min    = parseInt(mStr, 10)
+            // Post-midnight slots (hour < 6) belong to the next calendar day.
+            const calDay = hour < 6 ? dayNum + 1 : dayNum
+            return new Date(year, month - 1, calDay, hour, min, 0)
+          }
+        })()
 
     const toIcal = d =>
       `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}` +
@@ -239,11 +251,10 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
     const vevents = finalSchedule
       .sort((a, b) => a.day - b.day || toMins(a.start) - toMins(b.start))
       .map((s, i) => {
-        const dayStr = fest.days[s.day]
         return [
           'BEGIN:VEVENT',
-          `DTSTART:${toIcal(parseSlotDate(dayStr, s.start))}`,
-          `DTEND:${toIcal(parseSlotDate(dayStr, s.end))}`,
+          `DTSTART:${toIcal(resolveSlotDate(s.day, s.start))}`,
+          `DTEND:${toIcal(resolveSlotDate(s.day, s.end))}`,
           `SUMMARY:${s.artist} @ ${s.stage}`,
           `LOCATION:${fest.name}`,
           `UID:${fest.id}-${i}-${s.artist.replace(/\s+/g,'-').toLowerCase()}@festplan.app`,
