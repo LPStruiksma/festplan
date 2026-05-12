@@ -25,7 +25,7 @@
 //  at module-load time.  drainPendingWrites() uses this registry to replay
 //  queued writes without creating circular imports.
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createElement, createContext, useContext, useEffect, useState, useCallback } from 'react'
 
 // ── Pending writes queue ─────────────────────────────────────────────────────
 
@@ -175,11 +175,9 @@ export function SyncProvider({ children }) {
     }
   }, [])
 
-  return (
-    <SyncContext.Provider value={{ status, retry }}>
-      {children}
-    </SyncContext.Provider>
-  )
+  // Use createElement instead of JSX so this .js file stays valid for
+  // parsers (like Vite's oxc) that only allow JSX syntax in .jsx files.
+  return createElement(SyncContext.Provider, { value: { status, retry } }, children)
 }
 
 /**
