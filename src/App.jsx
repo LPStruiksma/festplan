@@ -9,6 +9,8 @@ import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
 import JoinPage from './pages/JoinPage'
 import AdminIngest from './pages/AdminIngest'
+import AdminFestivals from './pages/AdminFestivals'
+import AdminFestivalEdit from './pages/AdminFestivalEdit'
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -95,6 +97,14 @@ export default function App() {
         <Route
           path="/admin/ingest"
           element={<AdminIngest session={session} />}
+        />
+        <Route
+          path="/admin/festivals"
+          element={<AdminFestivals session={session} />}
+        />
+        <Route
+          path="/admin/festivals/:id"
+          element={<AdminFestivalEdit session={session} />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
