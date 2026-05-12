@@ -54,25 +54,25 @@ export async function getValidSpotifyToken(userId) {
   if (!userId) throw new Error('getValidSpotifyToken: userId is required')
 
   // ── 1. Read cached tokens ─────────────────────────────────────────────────
+  // Use maybeSingle() so a missing profile row returns null data instead of
+  // throwing "Cannot coerce the result to a single JSON object" (PGRST116).
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('spotify_access_token, spotify_refresh_token, spotify_token_expires_at')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
 
   if (error) {
     throw new Error(`Could not load Spotify tokens from database: ${error.message}`)
   }
 
-  const {
-    spotify_access_token:     accessToken,
-    spotify_refresh_token:    refreshToken,
-    spotify_token_expires_at: expiresAt,
-  } = profile
+  const accessToken  = profile?.spotify_access_token     ?? null
+  const refreshToken = profile?.spotify_refresh_token    ?? null
+  const expiresAt    = profile?.spotify_token_expires_at ?? null
 
   if (!accessToken) {
     throw new Error(
-      'No Spotify token found. Please sign out and reconnect your Spotify account.'
+      'No Spotify token found — please sign out and sign back in to reconnect Spotify.'
     )
   }
 
