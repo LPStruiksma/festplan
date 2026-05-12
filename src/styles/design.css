@@ -1,0 +1,176 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   FESTPLAN — Design System
+   Aesthetic: Festival Noir — luxury editorial × festival poster energy
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── DESIGN TOKENS ────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --fp-bg:        #06060a;
+  --fp-s1:        #0e0e14;
+  --fp-s2:        #16161e;
+  --fp-s3:        #1e1e28;
+  --fp-card:      #111118;
+
+  /* Borders */
+  --fp-border:    #1e1e28;
+  --fp-border2:   #2a2a36;
+  --fp-border3:   #3a3a48;
+
+  /* Text */
+  --fp-text:      #eae6d8;
+  --fp-text-dim:  #8a8890;
+  --fp-text-mute: #555560;
+  --fp-text-faint:#333340;
+
+  /* Accent — overridden per-festival */
+  --fp-accent:    #c8f400;
+  --fp-accent-dim: #c8f40040;
+  --fp-accent-bg:  #c8f40010;
+
+  /* Feedback */
+  --fp-warn:      #ff6b35;
+  --fp-info:      #22d3ee;
+  --fp-success:   #4ade80;
+
+  /* Typography */
+  --fp-font-display: 'Syne', sans-serif;
+  --fp-font-body:    'Outfit', sans-serif;
+
+  /* Spacing scale */
+  --fp-space-xs: 4px;
+  --fp-space-sm: 8px;
+  --fp-space-md: 16px;
+  --fp-space-lg: 24px;
+  --fp-space-xl: 40px;
+  --fp-space-2xl: 64px;
+
+  /* Radius */
+  --fp-radius-sm: 4px;
+  --fp-radius-md: 8px;
+  --fp-radius-lg: 14px;
+  --fp-radius-xl: 20px;
+
+  /* Shadows */
+  --fp-shadow-glow: 0 0 40px -10px var(--fp-accent-dim);
+  --fp-shadow-card: 0 2px 20px -4px rgba(0,0,0,.5);
+  --fp-shadow-lift: 0 8px 32px -8px rgba(0,0,0,.6);
+}
+
+/* ── GLOBAL RESET ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--fp-bg);
+  color: var(--fp-text);
+  font-family: var(--fp-font-body);
+  font-weight: 400;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  font-weight: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ── SCROLLBAR ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--fp-s1); }
+::-webkit-scrollbar-thumb { background: var(--fp-border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fp-border3); }
+
+/* ── NOISE OVERLAY ────────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ── ANIMATIONS ───────────────────────────────────────────────────────────── */
+@keyframes fp-fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fp-slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fp-slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fp-scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fp-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes fp-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+@keyframes fp-glow {
+  0%, 100% { box-shadow: 0 0 20px -5px var(--fp-accent-dim); }
+  50%      { box-shadow: 0 0 35px -5px var(--fp-accent-dim); }
+}
+
+@keyframes fp-gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes fp-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── UTILITY CLASSES ──────────────────────────────────────────────────────── */
+.fp-animate-in {
+  animation: fp-slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fp-stagger-1 { animation-delay: 0.05s; }
+.fp-stagger-2 { animation-delay: 0.1s; }
+.fp-stagger-3 { animation-delay: 0.15s; }
+.fp-stagger-4 { animation-delay: 0.2s; }
+.fp-stagger-5 { animation-delay: 0.25s; }
+.fp-stagger-6 { animation-delay: 0.3s; }
+.fp-stagger-7 { animation-delay: 0.35s; }
+.fp-stagger-8 { animation-delay: 0.4s; }
+
+/* ── SELECTION COLORS ─────────────────────────────────────────────────────── */
+::selection {
+  background: var(--fp-accent);
+  color: #000;
+}
