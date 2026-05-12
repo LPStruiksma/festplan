@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
 import { SyncProvider, drainPendingWrites } from './lib/sync-state'
+import { usePwaInstallPrompt } from './lib/pwa-install'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
@@ -11,6 +12,96 @@ import JoinPage from './pages/JoinPage'
 import AdminIngest from './pages/AdminIngest'
 import AdminFestivals from './pages/AdminFestivals'
 import AdminFestivalEdit from './pages/AdminFestivalEdit'
+
+// ── PWA install banner ────────────────────────────────────────────────────────
+
+const DISMISS_KEY   = 'festplan_pwa_dismiss_until'
+const DISMISS_MS    = 30 * 24 * 60 * 60 * 1000   // 30 days
+
+function InstallBanner() {
+  const { canInstall, promptInstall, isInstalled } = usePwaInstallPrompt()
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (!canInstall || isInstalled) return
+    const until = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10)
+    if (Date.now() < until) return
+    setVisible(true)
+  }, [canInstall, isInstalled])
+
+  if (!visible) return null
+
+  function dismiss() {
+    localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_MS))
+    setVisible(false)
+  }
+
+  async function install() {
+    const result = await promptInstall()
+    if (result?.outcome === 'accepted') setVisible(false)
+    else dismiss()
+  }
+
+  return (
+    <div style={{
+      position:        'fixed',
+      bottom:          16,
+      left:            '50%',
+      transform:       'translateX(-50%)',
+      zIndex:          9999,
+      display:         'flex',
+      alignItems:      'center',
+      gap:             10,
+      padding:         '10px 14px',
+      background:      'var(--fp-s1, #111)',
+      border:          '1px solid rgba(200,244,0,0.35)',
+      borderRadius:    '999px',
+      boxShadow:       '0 4px 24px rgba(0,0,0,0.5)',
+      fontFamily:      "var(--fp-font-body, 'Outfit', sans-serif)",
+      fontSize:        12,
+      whiteSpace:      'nowrap',
+      animation:       'fp-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both',
+    }}>
+      <span style={{ fontSize: 16 }}>⚡</span>
+      <span style={{ color: 'var(--fp-text, #e8e8e8)', fontWeight: 500 }}>
+        Install Festplan for offline access
+      </span>
+      <button
+        onClick={install}
+        style={{
+          background:   '#c8f400',
+          color:        '#000',
+          border:       'none',
+          borderRadius: '999px',
+          padding:      '5px 14px',
+          fontFamily:   "var(--fp-font-body, 'Outfit', sans-serif)",
+          fontSize:     11,
+          fontWeight:   800,
+          letterSpacing: 1.5,
+          textTransform: 'uppercase',
+          cursor:       'pointer',
+        }}
+      >
+        Install
+      </button>
+      <button
+        onClick={dismiss}
+        aria-label="Dismiss install banner"
+        style={{
+          background:  'transparent',
+          border:      'none',
+          color:       'var(--fp-text-mute, #555)',
+          cursor:      'pointer',
+          fontSize:    16,
+          lineHeight:  1,
+          padding:     '2px 4px',
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -78,6 +169,7 @@ export default function App() {
 
   return (
     <SyncProvider>
+      <InstallBanner />
       <Routes>
         <Route
           path="/"
