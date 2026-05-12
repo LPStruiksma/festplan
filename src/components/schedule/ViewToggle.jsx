@@ -1,13 +1,22 @@
 import { T } from '../../lib/ui'
+import { useIsMobile } from '../../lib/use-is-mobile'
 
 /**
  * Two-button toggle: List vs Grid view.
+ *
+ * Hidden on mobile — grid layout is not usable on small screens, so mobile
+ * users always see the list view (enforced in MyScheduleTab).
  *
  * Props:
  *   viewMode    — 'list' | 'grid'
  *   onViewChange — (mode) => void
  */
 export default function ViewToggle({ viewMode, onViewChange }) {
+  const isMobile = useIsMobile()
+
+  // On mobile the grid is hidden; no point showing the toggle.
+  if (isMobile) return null
+
   return (
     <div style={{
       display: 'flex', gap: 3,

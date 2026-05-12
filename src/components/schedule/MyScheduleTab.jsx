@@ -1,4 +1,5 @@
 import { T } from '../../lib/ui'
+import { useIsMobile } from '../../lib/use-is-mobile'
 import DaySelector from './DaySelector'
 import ViewToggle from './ViewToggle'
 import ListView from './ListView'
@@ -31,6 +32,8 @@ export default function MyScheduleTab({
   ratings, onRate,
   friends, allParticipants, finalSchedule,
 }) {
+  const isMobile = useIsMobile()
+
   return (
     <>
       {/* Timetable coming soon banner — only for lineup-only festivals */}
@@ -99,8 +102,8 @@ export default function MyScheduleTab({
         </div>
       )}
 
-      {/* Lineup-only: always list view; timetable: honour viewMode */}
-      {(isLineupOnly || viewMode === 'list')
+      {/* Lineup-only: always list view; mobile: always list view; timetable: honour viewMode */}
+      {(isLineupOnly || viewMode === 'list' || isMobile)
         ? <ListView
             dayLineup={dayLineup}
             myArtists={myArtists}

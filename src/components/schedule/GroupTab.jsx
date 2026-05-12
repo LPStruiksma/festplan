@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { T, pillBtn } from '../../lib/ui'
 import { FRIEND_COLORS, norm, toMins } from '../../lib/festivals'
+import { useIsMobile } from '../../lib/use-is-mobile'
 
 /**
  * "Group" tab — participants panel + per-day group slot list.
@@ -34,6 +36,16 @@ export default function GroupTab({
   onAddFriend, onRemoveFriend,
   onInvite, inviteStatus,
 }) {
+  const isMobile = useIsMobile()
+  // On mobile, the participants list starts collapsed to save screen space.
+  // Tapping the summary row expands it. Desktop always shows the full list.
+  const [participantsExpanded, setParticipantsExpanded] = useState(!isMobile)
+
+  // Keep the expanded state in sync when switching between breakpoints
+  // (e.g. rotating from landscape to portrait). We don't force-collapse on
+  // resize because the user may have explicitly opened it.
+  const totalPeople = friends.length + 1   // +1 for "Me"
+
   return (
     <div className="fp-animate-in fp-stagger-2">
 
@@ -58,16 +70,36 @@ export default function GroupTab({
           fontFamily: T.body,
           fontSize: 9, fontWeight: 800, letterSpacing: 4,
           color: fa, textTransform: 'uppercase',
-          marginBottom: 16,
+          marginBottom: isMobile && !participantsExpanded ? 0 : 16,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           flexWrap: 'wrap', gap: 8,
         }}>
-          <span>Participants</span>
+          {/* On mobile, tapping "Participants" toggles the list */}
+          <span
+            onClick={isMobile ? () => setParticipantsExpanded(e => !e) : undefined}
+            style={{
+              cursor: isMobile ? 'pointer' : 'default',
+              display: 'flex', alignItems: 'center', gap: 8,
+              userSelect: 'none',
+            }}
+          >
+            Participants
+            {isMobile && (
+              <span style={{
+                fontSize: 9, color: 'var(--fp-text-dim)', fontWeight: 600,
+              }}>
+                {participantsExpanded
+                  ? `${totalPeople} people ▲`
+                  : `${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} ▼`}
+              </span>
+            )}
+          </span>
           <div style={{ display: 'flex', gap: 6 }}>
             {friends.length < 3 && !addingFriend && (
               <button onClick={() => setAddingFriend(true)} style={{
                 ...pillBtn(false),
                 padding: '5px 11px', fontSize: 9,
+                ...(isMobile ? { minHeight: 44 } : {}),
               }}>+ Add Friend</button>
             )}
             <button
@@ -78,6 +110,7 @@ export default function GroupTab({
                 padding: '5px 11px', fontSize: 9,
                 opacity: inviteStatus === 'loading' ? 0.6 : 1,
                 cursor: inviteStatus === 'loading' ? 'default' : 'pointer',
+                ...(isMobile ? { minHeight: 44 } : {}),
               }}
             >
               {inviteStatus === 'loading' ? '…'
@@ -88,49 +121,56 @@ export default function GroupTab({
           </div>
         </div>
 
-        {/* Me row */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '10px 0',
-          borderBottom: '1px solid var(--fp-border)',
-        }}>
-          <span style={{
-            width: 10, height: 10, borderRadius: '50%',
-            background: fa, display: 'inline-block', flexShrink: 0,
-            boxShadow: `0 0 8px ${fa}40`,
-          }} />
-          <span style={{ fontFamily: T.body, fontWeight: 700, fontSize: 13, color: 'var(--fp-text)', flex: 1 }}>Me</span>
-          <span style={{ fontSize: 11, color: 'var(--fp-text-dim)' }}>{myArtists.length} artists</span>
-        </div>
+        {/* Participant rows — collapsible on mobile */}
+        {(participantsExpanded || !isMobile) && (
+          <>
+            {/* Me row */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 0',
+              borderBottom: '1px solid var(--fp-border)',
+            }}>
+              <span style={{
+                width: 10, height: 10, borderRadius: '50%',
+                background: fa, display: 'inline-block', flexShrink: 0,
+                boxShadow: `0 0 8px ${fa}40`,
+              }} />
+              <span style={{ fontFamily: T.body, fontWeight: 700, fontSize: 13, color: 'var(--fp-text)', flex: 1 }}>Me</span>
+              <span style={{ fontSize: 11, color: 'var(--fp-text-dim)' }}>{myArtists.length} artists</span>
+            </div>
 
-        {/* Friend rows */}
-        {friends.map((f, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 0',
-            borderBottom: '1px solid var(--fp-border)',
-          }}>
-            <span style={{
-              width: 10, height: 10, borderRadius: '50%',
-              background: FRIEND_COLORS[i % FRIEND_COLORS.length],
-              display: 'inline-block', flexShrink: 0,
-              boxShadow: `0 0 8px ${FRIEND_COLORS[i % FRIEND_COLORS.length]}40`,
-            }} />
-            <span style={{ fontFamily: T.body, fontWeight: 700, fontSize: 13, color: 'var(--fp-text)', flex: 1 }}>
-              {f.name}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--fp-text-dim)', marginRight: 8 }}>{f.artists.length} artists</span>
-            <span
-              onClick={() => onRemoveFriend(i)}
-              style={{
-                cursor: 'pointer', color: 'var(--fp-text-mute)', fontSize: 18, lineHeight: 1,
-                transition: 'color 0.15s ease',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--fp-warn)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--fp-text-mute)'}
-            >×</span>
-          </div>
-        ))}
+            {/* Friend rows */}
+            {friends.map((f, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 0',
+                borderBottom: '1px solid var(--fp-border)',
+              }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: FRIEND_COLORS[i % FRIEND_COLORS.length],
+                  display: 'inline-block', flexShrink: 0,
+                  boxShadow: `0 0 8px ${FRIEND_COLORS[i % FRIEND_COLORS.length]}40`,
+                }} />
+                <span style={{ fontFamily: T.body, fontWeight: 700, fontSize: 13, color: 'var(--fp-text)', flex: 1 }}>
+                  {f.name}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--fp-text-dim)', marginRight: 8 }}>{f.artists.length} artists</span>
+                <span
+                  onClick={() => onRemoveFriend(i)}
+                  style={{
+                    cursor: 'pointer', color: 'var(--fp-text-mute)', fontSize: 18, lineHeight: 1,
+                    transition: 'color 0.15s ease',
+                    // Ensure 44px tap target on mobile
+                    ...(isMobile ? { padding: '10px 4px' } : {}),
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--fp-warn)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--fp-text-mute)'}
+                >×</span>
+              </div>
+            ))}
+          </>
+        )}
 
         {/* Add friend form */}
         {addingFriend && (
@@ -200,9 +240,31 @@ export default function GroupTab({
 
       {/* Day selector — only for full-timetable festivals */}
       {!isLineupOnly && fest.days.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 18,
+          ...(isMobile ? {
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          } : { flexWrap: 'wrap' }),
+        }}>
           {fest.days.map((d, i) => (
-            <button key={i} onClick={() => setDay(i)} style={pillBtn(day === i, fa)}>{d}</button>
+            <button
+              key={i}
+              onClick={() => setDay(i)}
+              style={{
+                ...pillBtn(day === i, fa),
+                ...(isMobile ? {
+                  scrollSnapAlign: 'start',
+                  flexShrink: 0,
+                  minHeight: 44,
+                  whiteSpace: 'nowrap',
+                } : {}),
+              }}
+            >{d}</button>
           ))}
         </div>
       )}

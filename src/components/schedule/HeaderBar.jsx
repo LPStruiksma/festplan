@@ -1,5 +1,6 @@
 import { T, pillBtn } from '../../lib/ui'
 import { useSync } from '../../lib/sync-state'
+import { useIsMobile } from '../../lib/use-is-mobile'
 
 /**
  * Sticky top bar: back button, festival name, action buttons, and sync pill.
@@ -20,6 +21,10 @@ export default function HeaderBar({
   onBack, onExportCalendar, onExportPoster, onBuildPlaylist, hasSpotifyToken,
 }) {
   const { status, retry } = useSync()
+  const isMobile = useIsMobile()
+
+  // Minimum tap target height on mobile — 44 px per Apple/Google HIG
+  const mobileBtn = isMobile ? { minHeight: 44, minWidth: 44 } : {}
 
   // ── Sync pill config ──────────────────────────────────────────────────────
   const pill = status === 'syncing'
@@ -63,6 +68,7 @@ export default function HeaderBar({
       {/* Back */}
       <button onClick={onBack} style={{
         ...pillBtn(false),
+        ...mobileBtn,
         padding: '7px 12px',
         display: 'flex', alignItems: 'center', gap: 6,
       }}>
@@ -72,16 +78,18 @@ export default function HeaderBar({
         Back
       </button>
 
-      {/* Festival name */}
+      {/* Festival name — "Now Viewing" overline hidden on mobile to save space */}
       <div style={{ flex: 1, minWidth: 100 }}>
-        <div style={{
-          fontFamily: T.body,
-          fontSize: 8, fontWeight: 700, letterSpacing: 3.5,
-          color: 'var(--fp-text-mute)', textTransform: 'uppercase',
-        }}>Now Viewing</div>
+        {!isMobile && (
+          <div style={{
+            fontFamily: T.body,
+            fontSize: 8, fontWeight: 700, letterSpacing: 3.5,
+            color: 'var(--fp-text-mute)', textTransform: 'uppercase',
+          }}>Now Viewing</div>
+        )}
         <div style={{
           fontFamily: T.display,
-          fontSize: 16, fontWeight: 800,
+          fontSize: isMobile ? 14 : 16, fontWeight: 800,
           color: fa, textTransform: 'uppercase',
           letterSpacing: 0.5, lineHeight: 1.1,
         }}>{fest.emoji} {fest.name}</div>
@@ -95,6 +103,7 @@ export default function HeaderBar({
           title="Build Spotify Playlist"
           style={{
             ...pillBtn(false),
+            ...mobileBtn,
             padding: '7px 12px',
             display: 'flex', alignItems: 'center', gap: 6,
             opacity: toast?.type === 'loading' ? 0.5 : 1,
@@ -112,6 +121,7 @@ export default function HeaderBar({
         <>
           <button onClick={onExportCalendar} style={{
             ...pillBtn(false),
+            ...mobileBtn,
             padding: '7px 12px',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -125,6 +135,7 @@ export default function HeaderBar({
           </button>
           <button onClick={onExportPoster} style={{
             ...pillBtn(false),
+            ...mobileBtn,
             padding: '7px 12px',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
