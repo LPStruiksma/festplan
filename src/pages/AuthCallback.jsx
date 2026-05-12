@@ -33,16 +33,18 @@ async function persistSpotifyTokens(session) {
 
   const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString()
 
+  // Use upsert so we create the profile row if it doesn't exist yet
+  // (e.g. if the DB trigger failed or an INSERT policy was missing).
   const { error } = await supabase
     .from('profiles')
-    .update({
+    .upsert({
+      id:                       userId,
       spotify_access_token:     accessToken,
       // Only overwrite refresh token if Spotify gave us one — re-logins
       // sometimes omit it; keeping the old one is safer than clearing it.
       ...(refreshToken ? { spotify_refresh_token: refreshToken } : {}),
       spotify_token_expires_at: expiresAt,
-    })
-    .eq('id', userId)
+    }, { onConflict: 'id' })
 
   if (error) {
     console.warn('[festplan] Could not persist Spotify tokens:', error.message)
