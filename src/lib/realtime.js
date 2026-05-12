@@ -55,15 +55,33 @@ export function useGroupSync(groupUserIds, festivalKey, onUpdate) {
   const cbRef = useRef(onUpdate)
   cbRef.current = onUpdate
 
+  // Ref-tracked subscription handles.  Storing channels in a ref (rather than
+  // only in the effect closure) lets us tear down an existing subscription set
+  // at the very start of the next effect run, before the new set is created.
+  // This closes the race window where rapid mount → unmount → mount could
+  // leave two overlapping subscription sets alive simultaneously.
+  const channelsRef = useRef([])
+
   // Serialise the array so useEffect can compare it by value across renders.
   const userIdsKey = JSON.stringify(
     [...(groupUserIds ?? [])].sort()  // sort → stable key regardless of order
   )
 
   useEffect(() => {
+    // ── Tear down any channels that survived from a previous run ────────────
+    // Normally React's cleanup function handles this, but under rapid
+    // mount/unmount cycles the cleanup can fire after the new effect has
+    // already started.  Removing here ensures we never have overlapping sets.
+    channelsRef.current.forEach(ch => supabase.removeChannel(ch))
+    channelsRef.current = []
+
     if (!festivalKey || !groupUserIds?.length) return
 
-    const channels = []
+    // isMounted guards against calling onUpdate after the component has
+    // unmounted — possible if a Realtime payload arrives during the brief
+    // window between when React schedules cleanup and when the WebSocket
+    // actually closes.
+    let isMounted = true
 
     for (const userId of groupUserIds) {
       // Unique channel name per (festival, user) so teardowns are precise.
@@ -82,6 +100,7 @@ export function useGroupSync(groupUserIds, festivalKey, onUpdate) {
             filter: `user_id=eq.${userId}`,   // server-side narrow
           },
           payload => {
+            if (!isMounted) return
             // Client-side festival guard (Realtime only allows one filter).
             const row = payload.new ?? payload.old ?? {}
             if (row.festival_key && row.festival_key !== festivalKey) return
@@ -105,6 +124,7 @@ export function useGroupSync(groupUserIds, festivalKey, onUpdate) {
             filter: `user_id=eq.${userId}`,
           },
           payload => {
+            if (!isMounted) return
             const row = payload.new ?? payload.old ?? {}
             if (row.festival_key && row.festival_key !== festivalKey) return
 
@@ -123,12 +143,14 @@ export function useGroupSync(groupUserIds, festivalKey, onUpdate) {
           }
         })
 
-      channels.push(ch)
+      channelsRef.current.push(ch)
     }
 
     // Cleanup — runs when groupUserIds / festivalKey changes or on unmount.
     return () => {
-      channels.forEach(ch => supabase.removeChannel(ch))
+      isMounted = false
+      channelsRef.current.forEach(ch => supabase.removeChannel(ch))
+      channelsRef.current = []
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [festivalKey, userIdsKey])
