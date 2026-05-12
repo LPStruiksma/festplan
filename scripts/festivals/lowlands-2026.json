@@ -1,0 +1,42 @@
+{
+  "id": "lowlands",
+  "name": "Lowlands 2026",
+  "location": "Biddinghuizen, NL",
+  "emoji": "⛺",
+  "accentColor": "#ff8c42",
+  "startDate": "2026-08-13",
+  "endDate": "2026-08-16",
+  "days": [
+    "Thu Aug 13",
+    "Fri Aug 14",
+    "Sat Aug 15",
+    "Sun Aug 16"
+  ],
+  "stages": [
+    "Alpha",
+    "Beta",
+    "Bravo",
+    "Gamma",
+    "India"
+  ],
+  "lineup": [
+    { "artist": "Clipse",            "stage": "Alpha", "day": 0, "start": "21:30", "end": "23:00" },
+    { "artist": "Blood Orange",      "stage": "Beta",  "day": 0, "start": "21:00", "end": "22:00" },
+    { "artist": "Dijon",             "stage": "Bravo", "day": 0, "start": "19:30", "end": "20:30" },
+    { "artist": "2hollis",           "stage": "India", "day": 0, "start": "18:00", "end": "19:00" },
+    { "artist": "Peggy Gou",         "stage": "Gamma", "day": 0, "start": "23:00", "end": "01:00" },
+    { "artist": "Ethel Cain",        "stage": "Bravo", "day": 0, "start": "21:00", "end": "22:00" },
+    { "artist": "Massive Attack",    "stage": "Alpha", "day": 1, "start": "21:30", "end": "23:00" },
+    { "artist": "Little Simz",       "stage": "Beta",  "day": 1, "start": "20:00", "end": "21:00" },
+    { "artist": "Overmono",          "stage": "Gamma", "day": 1, "start": "22:30", "end": "00:00" },
+    { "artist": "Turnstile",         "stage": "Bravo", "day": 1, "start": "19:30", "end": "20:30" },
+    { "artist": "The xx",            "stage": "Alpha", "day": 2, "start": "21:00", "end": "22:30" },
+    { "artist": "Gorillaz",          "stage": "Alpha", "day": 2, "start": "19:00", "end": "20:30" },
+    { "artist": "FKA twigs",         "stage": "Beta",  "day": 2, "start": "20:30", "end": "21:30" },
+    { "artist": "KNEECAP",           "stage": "Bravo", "day": 2, "start": "19:00", "end": "20:00" },
+    { "artist": "Slowdive",          "stage": "India", "day": 2, "start": "18:00", "end": "19:00" },
+    { "artist": "Knocked Loose",     "stage": "Beta",  "day": 3, "start": "20:00", "end": "21:00" },
+    { "artist": "Laufey",            "stage": "Alpha", "day": 3, "start": "20:30", "end": "21:30" },
+    { "artist": "Holly Humberstone", "stage": "Bravo", "day": 3, "start": "18:30", "end": "19:30" }
+  ]
+}

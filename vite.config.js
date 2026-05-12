@@ -7,21 +7,22 @@ import { VitePWA } from 'vite-plugin-pwa'
 // These are matched against the full request URL at runtime inside the service
 // worker, so they need to match the deployed origin-relative paths.
 //
-// Edge function calls  → networkFirst  (fresh data when online, cache fallback)
-// Supabase REST reads  → staleWhileRevalidate  (instant render, background sync)
-// Everything else      → networkOnly  (auth, realtime, maps, etc.)
+// Edge function calls  → NetworkFirst  (fresh data when online, cache fallback)
+// Festival tables      → NetworkFirst  (admin edits must be visible immediately;
+//                         fall back to cache only when genuinely offline)
+// User-owned tables    → StaleWhileRevalidate  (instant render, background sync;
+//                         safe because changes come from this device only)
+// Everything else      → NetworkOnly  (auth, realtime, maps, etc.)
 
 const EDGE_FN_PATTERN = /\/functions\/v1\//
 
-// Tables we want to cache for offline-friendly reads
-const REST_TABLES = [
-  'user_artists',
-  'user_schedules',
-  'artist_ratings',
-  'timetable_slots',
-  'festival_meta',
-]
-const REST_PATTERN = new RegExp(`/rest/v1/(${REST_TABLES.join('|')})`)
+// Admin-edited content: must be fresh from the network when reachable.
+const FESTIVAL_TABLES = ['festival_meta', 'timetable_slots']
+const FESTIVAL_REST_PATTERN = new RegExp(`/rest/v1/(${FESTIVAL_TABLES.join('|')})`)
+
+// User-owned tables: safe to serve from cache while revalidating in bg.
+const USER_TABLES = ['user_artists', 'user_schedules', 'artist_ratings']
+const USER_REST_PATTERN = new RegExp(`/rest/v1/(${USER_TABLES.join('|')})`)
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -65,15 +66,35 @@ export default defineConfig({
             },
           },
 
-          // 2. Supabase REST reads for the tables we use — staleWhileRevalidate
-          //    so the schedule renders instantly from cache while syncing in bg.
+          // 2a. Festival tables (festival_meta, timetable_slots) — NetworkFirst.
+          //     An admin edit must be visible to users immediately; we only fall
+          //     back to the cache when the device is genuinely offline.
+          //     3-second network timeout keeps the schedule snappy on slow
+          //     festival WiFi before dropping to the cached version.
           {
-            urlPattern: REST_PATTERN,
+            urlPattern: FESTIVAL_REST_PATTERN,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'supabase-festival',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 7,  // 7 days (offline fallback only)
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+
+          // 2b. User-owned tables (user_artists, user_schedules, artist_ratings)
+          //     — StaleWhileRevalidate: safe to show the cached version instantly
+          //     because mutations on these tables always originate from this device.
+          {
+            urlPattern: USER_REST_PATTERN,
             handler: 'StaleWhileRevalidate',
             options: {
-              cacheName: 'supabase-rest',
+              cacheName: 'supabase-user',
               expiration: {
-                maxEntries: 100,
+                maxEntries: 60,
                 maxAgeSeconds: 60 * 60 * 24 * 3,  // 3 days
               },
               cacheableResponse: { statuses: [0, 200] },

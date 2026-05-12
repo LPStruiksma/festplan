@@ -1,19 +1,47 @@
 // src/lib/pwa-install.js
 //
+// Two hooks:
+//
 // usePwaInstallPrompt() — captures the browser's beforeinstallprompt event
 // and exposes a promptInstall() function that triggers the native install
 // dialog.
-//
-// Usage:
-//   const { canInstall, promptInstall, isInstalled } = usePwaInstallPrompt()
 //
 //   canInstall   — true when the browser has an install prompt ready
 //                  (Chrome/Edge on Android + desktop; not Safari)
 //   promptInstall() — shows the native A2HS / install dialog; resolves with
 //                  { outcome: 'accepted' | 'dismissed' }
 //   isInstalled  — true when running in standalone (already installed) mode
+//
+// usePwaUpdate() — detects when a new service worker has installed and the
+// page needs a reload to pick it up (JS/SW version mismatch on long-lived tabs).
+//
+//   needRefresh  — true when a new SW is waiting and the page is stale
+//   reload()     — calls updateServiceWorker(true): skipWaiting + page reload
 
 import { useState, useEffect, useRef } from 'react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
+
+// ── usePwaUpdate ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns { needRefresh, reload }.
+ *
+ * needRefresh is true when vite-plugin-pwa reports a new service worker has
+ * installed and taken control, meaning the current JS bundle may be stale.
+ * reload() calls updateServiceWorker(true) which triggers skipWaiting()
+ * followed by a full page reload to pick up the new assets.
+ */
+export function usePwaUpdate() {
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW()
+
+  return {
+    needRefresh: !!needRefresh,
+    reload: () => updateServiceWorker(true),
+  }
+}
 
 export function usePwaInstallPrompt() {
   const [canInstall,  setCanInstall]  = useState(false)

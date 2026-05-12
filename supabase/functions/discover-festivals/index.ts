@@ -67,6 +67,7 @@ interface FestivalGroup {
   allArtistsDisplay: Map<string, string>  // lowercase → display name
   matchedArtists: Map<string, string>     // lowercase → display name
   tmUrl?: string
+  tmEventIds: Set<string>           // one TM event ID per festival day (for ingest)
 }
 
 // ── TICKETMASTER QUERIES ─────────────────────────────────────────────────────
@@ -147,21 +148,22 @@ async function fetchAllArtistEvents(
 
 function isFestivalEvent(event: TmEvent): boolean {
   const name = (event.name || '').toLowerCase()
-
-  // Strong signal: multiple attractions on the lineup
   const attractionCount = event._embedded?.attractions?.length || 0
-  if (attractionCount >= MIN_LINEUP) return true
 
-  // Name-based signals
-  if (/festival|fest\b|festi|open air|openair/i.test(name)) return true
+  // A festival must have at least MIN_LINEUP (3) attractions.
+  // A single headliner — even at a venue called a festival — isn't a festival.
+  if (attractionCount < MIN_LINEUP) return false
 
-  // Genre/subgenre signals from Ticketmaster classification
-  const cls = event.classifications?.[0]
-  const genre = (cls?.genre?.name || '').toLowerCase()
-  const subGenre = (cls?.subGenre?.name || '').toLowerCase()
-  if (/festival/i.test(genre) || /festival/i.test(subGenre)) return true
+  // Additionally require a festival signal in the name OR genre.
+  // Previously this was an independent OR branch with the attraction count, which
+  // let tour-stop events with a vague genre tag slip through.  AND is much tighter.
+  const hasFestivalName  = /festival|fest\b|festi|open air/i.test(name)
+  const cls              = event.classifications?.[0]
+  const genre            = (cls?.genre?.name    || '').toLowerCase()
+  const subGenre         = (cls?.subGenre?.name || '').toLowerCase()
+  const hasFestivalGenre = /festival/i.test(genre) || /festival/i.test(subGenre)
 
-  return false
+  return hasFestivalName || hasFestivalGenre
 }
 
 // Check if an event is an artist tour stop at a festival
@@ -193,6 +195,10 @@ function makeGroupKey(event: TmEvent): string {
 
 function slugify(name: string): string {
   return name.toLowerCase()
+    // Strip leading date-range prefixes that produce junk slugs like
+    // "2-july-5-july-rock-werchter".  Run both passes before anything else.
+    .replace(/^\d+\s*-?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*/i, '')
+    .replace(/^\d{1,2}(st|nd|rd|th)\s+\w+/i, '')
     // Strip common suffixes that differ between sources
     .replace(/\s*-?\s*(festivalticket|combi|weekend|day ticket|friday|saturday|sunday|thursday).*$/i, '')
     .replace(/\s*\d{4}\s*/g, ' ')        // strip years
@@ -218,6 +224,20 @@ function groupIntoFestivals(
   for (const event of events) {
     if (!isFestivalEvent(event)) continue
 
+    // Belt-and-suspenders: a single attraction starting after 18:00 is a concert.
+    // isFestivalEvent already requires ≥3 attractions, so this guard is for any
+    // future loosening of that threshold.
+    const _ac        = event._embedded?.attractions?.length || 0
+    const _localTime = event.dates?.start?.localTime
+    if (_ac === 1 && _localTime && _localTime >= '18:00') continue
+
+    // Reject tour stops: if the longest alphabetic word in the event name
+    // equals the queried artist (case-insensitive), this is a solo show.
+    // e.g. queried "Muse", event name "Muse" → longest word "Muse" = artist → skip.
+    const _nameWords    = (event.name || '').split(/\s+/).filter(w => /[a-zA-Z]/.test(w))
+    const _longestWord  = _nameWords.reduce((a, b) => a.length >= b.length ? a : b, '')
+    if (_longestWord.toLowerCase() === event._queriedArtist.toLowerCase()) continue
+
     const key = makeGroupKey(event)
     const venue = event._embedded?.venues?.[0]
 
@@ -237,15 +257,17 @@ function groupIntoFestivals(
         allArtistsDisplay: new Map(),
         matchedArtists: new Map(),
         tmUrl: event.url,
+        tmEventIds: new Set(),
       })
     }
 
     const group = groups.get(key)!
 
-    // Collect dates
+    // Collect dates and TM event IDs (one per festival day, deduped)
     if (event.dates?.start?.localDate) {
       group.dates.add(event.dates.start.localDate)
     }
+    group.tmEventIds.add(event.id)
 
     // The queried artist is a confirmed match
     const qLower = event._queriedArtist.toLowerCase()
@@ -464,6 +486,7 @@ serve(async (req) => {
         accentColor: meta?.accent_color || null,
         stages: meta?.stages || null,
         ticketUrl: g.tmUrl || null,
+        tmEventIds: [...g.tmEventIds],  // TM event IDs for client-side ingest
       }
     })
 

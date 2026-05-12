@@ -1,6 +1,6 @@
 {
   "_note": "Glastonbury 2026 is a fallow year (no festival). This file uses confirmed 2025 artists as placeholder data so the seed script can be exercised end-to-end. Replace with real data when the 2027 lineup is announced.",
-  "id": "glastonbury-2026",
+  "id": "glastonbury",
   "name": "Glastonbury 2026",
   "location": "Worthy Farm, Pilton, Somerset, UK",
   "emoji": "🎸",

@@ -81,7 +81,16 @@ export async function loadArtists(userId) {
     console.warn('[festplan] loadArtists:', error.message)
     return null
   }
-  return data.map(r => r.artist_name)
+  // Defensive dedup: guard against any pre-constraint rows that survived cleanup.
+  const seen = new Set()
+  return data
+    .map(r => r.artist_name)
+    .filter(a => {
+      const key = a.toLowerCase().trim()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 }
 
 /**
@@ -89,6 +98,16 @@ export async function loadArtists(userId) {
  * Registered as the 'artists' drain handler so queued writes can be replayed.
  */
 async function _rawSaveArtistsRemote(userId, artists) {
+  // Dedupe case-insensitively, preserving first-occurrence order.
+  // Prevents tripping the UNIQUE INDEX on (user_id, COALESCE(festival_key,''), lower(artist_name)).
+  const seen = new Set()
+  const unique = artists.filter(a => {
+    const key = a.toLowerCase().trim()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
   const { error: delErr } = await supabase
     .from('user_artists')
     .delete()
@@ -96,12 +115,12 @@ async function _rawSaveArtistsRemote(userId, artists) {
     .is('festival_key', null)
 
   if (delErr) throw new Error(delErr.message)
-  if (!artists.length) return
+  if (!unique.length) return
 
   const { error: insErr } = await supabase
     .from('user_artists')
     .insert(
-      artists.map((artist_name, position) => ({
+      unique.map((artist_name, position) => ({
         user_id:      userId,
         festival_key: null,   // global list — not yet tied to a festival
         artist_name,

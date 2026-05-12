@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAllUserArtists } from '../lib/spotify'
-import { FESTIVALS, FEST_COLORS, ALL_ARTISTS, norm } from '../lib/festivals'
-import { discoverFestivals, mergeFestivals } from '../lib/api'
+import { FEST_COLORS, norm } from '../lib/festivals'
+import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, recommendFestivals, ensureFestivalIngested } from '../lib/api'
+import { getValidSpotifyToken } from '../lib/spotify-auth'
 import { supabase } from '../lib/supabase'
 import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
 
@@ -31,6 +32,28 @@ export default function SetupPage({ session }) {
   const [discoveredFestivals, setDiscoveredFestivals] = useState([])
   const [discovering, setDiscovering] = useState(false)
   const [discoverySource, setDiscoverySource] = useState(null)
+  // All festivals for the Plan mode picker — loaded from Supabase on mount
+  const [planFestivals, setPlanFestivals] = useState([])
+
+  // Festival comparison — up to 4 IDs selected in Find mode
+  const [compareIds, setCompareIds] = useState(new Set())
+
+  // Related-artist recommendations — "You might also like"
+  const [recommendations, setRecommendations]   = useState([])
+  const [recommending,    setRecommending]       = useState(false)
+
+  // ID of the festival currently being ingested into Supabase, or null.
+  const [ingestingId, setIngestingId] = useState(null)
+
+  const toggleCompare = (id) => {
+    setCompareIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) { next.delete(id); return next }
+      if (next.size >= 4) return prev   // max 4
+      next.add(id)
+      return next
+    })
+  }
 
   // 'idle' | 'writing' | 'synced'
   const [syncStatus, setSyncStatus] = useState('idle')
@@ -75,6 +98,11 @@ export default function SetupPage({ session }) {
     load()
   }, [session])
 
+  // Load all seeded festivals for the Plan mode picker on first mount
+  useEffect(() => {
+    fetchAllFestivals().then(setPlanFestivals)
+  }, [])
+
   // Keep localStorage in sync immediately whenever myArtists changes (after
   // initial load). This ensures SchedulePage always sees the latest list on
   // navigation, even if the user clicks "Build My Schedule" before the
@@ -106,7 +134,7 @@ export default function SetupPage({ session }) {
     try {
       const { source, festivals } = await discoverFestivals(artists)
       setDiscoverySource(source)
-      setDiscoveredFestivals(source === 'live' ? mergeFestivals(festivals, artists) : festivals)
+      setDiscoveredFestivals(source === 'live' ? await mergeFestivals(festivals, artists) : festivals)
     } catch (e) {
       console.error('Discovery failed:', e)
     } finally {
@@ -114,14 +142,36 @@ export default function SetupPage({ session }) {
     }
   }, [])
 
+  // Fetch related-artist recommendations — only when the user has ≥5 artists.
+  // We get their stored Spotify token first so the edge function can call the
+  // Spotify related-artists API on the server without exposing the secret.
+  const runRecommendations = useCallback(async (artists) => {
+    if (artists.length < 5) return
+    setRecommending(true)
+    try {
+      const token = await getValidSpotifyToken(session?.user?.id)
+      const recs  = await recommendFestivals(artists, token)
+      setRecommendations(recs.slice(0, 3))
+    } catch (e) {
+      // Silently degrade — recommendations are non-critical
+      console.warn('Recommendations failed:', e)
+      setRecommendations([])
+    } finally {
+      setRecommending(false)
+    }
+  }, [session])
+
   useEffect(() => {
     if (setupMode === 'find' && myArtists.length && !fetching) {
       runDiscovery(myArtists)
     }
-  }, [setupMode, myArtists, fetching, runDiscovery])
+    if (setupMode === 'find' && myArtists.length >= 5 && !fetching) {
+      runRecommendations(myArtists)
+    }
+  }, [setupMode, myArtists, fetching, runDiscovery, runRecommendations])
 
   const hints = artistInput.length >= 2
-    ? ALL_ARTISTS.filter(a =>
+    ? artistCache.filter(a =>
         norm(a).includes(norm(artistInput)) &&
         !myArtists.some(m => norm(m) === norm(a))
       ).slice(0, 5)
@@ -136,20 +186,27 @@ export default function SetupPage({ session }) {
     setShowHints(false)
   }
 
-  const goToSchedule = (fid) => {
+  const goToSchedule = async (fid) => {
     const id = fid || festId
-    if (!myArtists.length || !id) return
+    if (!myArtists.length || !id || ingestingId) return
     // localStorage already kept current by the immediate effect above;
     // festival key persistence is handled in a separate migration.
     localStorage.setItem('festplan_festival', id)
-    // For live-discovered festivals that aren't in the hardcoded FESTIVALS
-    // object, save their metadata so SchedulePage can build the fest object
-    // (including lineup-only mode) without relying on FESTIVALS[id].
-    if (!FESTIVALS[id]) {
-      const liveData = discoveredFestivals.find(f => f.id === id)
-      if (liveData) {
-        localStorage.setItem('festplan_festival_meta', JSON.stringify(liveData))
-      }
+    // Save festival metadata for any live-discovered festival so SchedulePage
+    // can fall back to it (lineup-only shape) if Supabase is unreachable.
+    const liveData = discoveredFestivals.find(f => f.id === id)
+    if (liveData) {
+      localStorage.setItem('festplan_festival_meta', JSON.stringify(liveData))
+    }
+    // For live-discovered festivals not already seeded in Supabase, trigger a
+    // background ingest so SchedulePage gets a real lineup instead of
+    // lineup-only mode.  If ingest fails (non-admin, network error, etc.) we
+    // navigate anyway — lineup-only mode handles the degraded state gracefully.
+    const isLiveOnly = liveData && !planFestivals.some(p => p.id === id)
+    if (isLiveOnly && liveData.tmEventIds?.length) {
+      setIngestingId(id)
+      await ensureFestivalIngested(id, liveData.tmEventIds)
+      setIngestingId(null)
     }
     navigate('/schedule')
   }
@@ -479,8 +536,8 @@ export default function SetupPage({ session }) {
               <div style={sectionLabel()}>② Choose Your Festival</div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                {Object.values(FESTIVALS).map(f => {
-                  const fac = FEST_COLORS[f.id]
+                {planFestivals.map(f => {
+                  const fac = f.accentColor || FEST_COLORS[f.id]
                   const sel = festId === f.id
                   return (
                     <div key={f.id}
@@ -527,8 +584,8 @@ export default function SetupPage({ session }) {
                 })}
               </div>
 
-              {/* Live-discovered festivals (plan mode) */}
-              {discoveredFestivals.filter(f => !FESTIVALS[f.id] && f.matchCount > 0).length > 0 && (
+              {/* Live-discovered festivals not already in the plan grid (plan mode) */}
+              {discoveredFestivals.filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0).length > 0 && (
                 <>
                   <div style={{
                     ...sectionLabel('var(--fp-text-dim)'),
@@ -544,7 +601,7 @@ export default function SetupPage({ session }) {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                     {discoveredFestivals
-                      .filter(f => !FESTIVALS[f.id] && f.matchCount > 0)
+                      .filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0)
                       .slice(0, 8)
                       .map(f => {
                         const fac = f.accentColor || '#22d3ee'
@@ -597,29 +654,48 @@ export default function SetupPage({ session }) {
 
             {/* CTA button */}
             <div className="fp-animate-in fp-stagger-5" style={{ textAlign: 'center' }}>
-              <button
-                onClick={() => goToSchedule()}
-                disabled={!myArtists.length || !festId}
-                style={{
-                  background: myArtists.length && festId ? 'var(--fp-accent)' : 'var(--fp-s3)',
-                  color: myArtists.length && festId ? '#000' : 'var(--fp-text-mute)',
-                  border: 'none',
+              {ingestingId ? (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: 'var(--fp-s3)',
                   borderRadius: 'var(--fp-radius-md)',
                   padding: '15px 44px',
-                  fontFamily: T.body,
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: myArtists.length && festId ? 'pointer' : 'not-allowed',
-                  letterSpacing: 3,
+                  fontSize: 13, fontWeight: 800, letterSpacing: 3,
                   textTransform: 'uppercase',
-                  transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: myArtists.length && festId ? '0 0 30px -8px var(--fp-accent-dim)' : 'none',
-                }}
-              >
-                {discoveredFestivals.find(f => f.id === festId)?.hasTimetable === false
-                  ? 'Browse Lineup →'
-                  : 'Build My Schedule →'}
-              </button>
+                  color: 'var(--fp-text-dim)',
+                }}>
+                  <div style={{
+                    width: 14, height: 14, flexShrink: 0,
+                    border: '2px solid var(--fp-text-dim)', borderTopColor: 'transparent',
+                    borderRadius: '50%', animation: 'fp-spin 0.8s linear infinite',
+                  }} />
+                  Importing schedule...
+                </div>
+              ) : (
+                <button
+                  onClick={() => goToSchedule()}
+                  disabled={!myArtists.length || !festId}
+                  style={{
+                    background: myArtists.length && festId ? 'var(--fp-accent)' : 'var(--fp-s3)',
+                    color: myArtists.length && festId ? '#000' : 'var(--fp-text-mute)',
+                    border: 'none',
+                    borderRadius: 'var(--fp-radius-md)',
+                    padding: '15px 44px',
+                    fontFamily: T.body,
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: myArtists.length && festId ? 'pointer' : 'not-allowed',
+                    letterSpacing: 3,
+                    textTransform: 'uppercase',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: myArtists.length && festId ? '0 0 30px -8px var(--fp-accent-dim)' : 'none',
+                  }}
+                >
+                  {discoveredFestivals.find(f => f.id === festId)?.hasTimetable === false
+                    ? 'Browse Lineup →'
+                    : 'Build My Schedule →'}
+                </button>
+              )}
               {(!festId || !myArtists.length) && (
                 <p style={{ fontSize: 11, color: 'var(--fp-text-mute)', marginTop: 12 }}>
                   {!myArtists.length ? '↑ Add at least one artist' : '↑ Select a festival'} to continue
@@ -658,6 +734,9 @@ export default function SetupPage({ session }) {
               const matches = f.matchedArtists || []
               const pct = myArtists.length ? Math.round(count / myArtists.length * 100) : 0
 
+              const isCompared    = compareIds.has(f.id)
+              const compareMaxed  = compareIds.size >= 4 && !isCompared
+
               return (
                 <div key={f.id} style={{
                   background: 'var(--fp-card)',
@@ -669,6 +748,39 @@ export default function SetupPage({ session }) {
                   overflow: 'hidden',
                   animation: `fp-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.06}s both`,
                 }}>
+
+                  {/* Compare checkbox — top-right */}
+                  <button
+                    onClick={e => { e.stopPropagation(); toggleCompare(f.id) }}
+                    disabled={compareMaxed}
+                    title={isCompared ? 'Remove from comparison' : compareMaxed ? 'Max 4 festivals' : 'Add to comparison'}
+                    style={{
+                      position:       'absolute',
+                      top:            11,
+                      right:          12,
+                      width:          20,
+                      height:         20,
+                      borderRadius:   4,
+                      border:         `1.5px solid ${isCompared ? fac : 'var(--fp-border2)'}`,
+                      background:     isCompared ? fac : 'transparent',
+                      cursor:         compareMaxed ? 'not-allowed' : 'pointer',
+                      display:        'flex',
+                      alignItems:     'center',
+                      justifyContent: 'center',
+                      fontSize:       11,
+                      fontWeight:     900,
+                      color:          isCompared ? '#000' : 'transparent',
+                      opacity:        compareMaxed ? 0.25 : 1,
+                      transition:     'all 0.15s',
+                      zIndex:         2,
+                      padding:        0,
+                      lineHeight:     1,
+                    }}
+                    aria-pressed={isCompared}
+                  >
+                    ✓
+                  </button>
+
                   {/* Left accent bar */}
                   <div style={{
                     position: 'absolute', top: 0, left: 0, bottom: 0, width: 3,
@@ -752,28 +864,160 @@ export default function SetupPage({ session }) {
                   </div>
 
                   {count > 0 && (
-                    <button onClick={() => goToSchedule(f.id)} style={{
-                      background: f.hasTimetable ? fac : 'transparent',
-                      color: f.hasTimetable ? '#000' : fac,
-                      border: f.hasTimetable ? 'none' : `1px solid ${fac}60`,
-                      borderRadius: 'var(--fp-radius-sm)',
-                      padding: '9px 18px',
-                      fontFamily: T.body,
-                      fontSize: 10,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      letterSpacing: 2.5,
-                      textTransform: 'uppercase',
-                      marginTop: 2,
-                      marginLeft: 52,
-                      transition: 'all 0.2s ease',
-                    }}>
-                      {f.hasTimetable ? 'Plan This Festival →' : 'Browse Lineup →'}
-                    </button>
+                    ingestingId === f.id ? (
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        padding: '9px 18px',
+                        fontSize: 10, fontWeight: 700, letterSpacing: 2.5,
+                        textTransform: 'uppercase',
+                        color: fac, marginTop: 2, marginLeft: 52,
+                      }}>
+                        <div style={{
+                          width: 10, height: 10, flexShrink: 0,
+                          border: `1.5px solid ${fac}`, borderTopColor: 'transparent',
+                          borderRadius: '50%', animation: 'fp-spin 0.8s linear infinite',
+                        }} />
+                        Importing schedule...
+                      </div>
+                    ) : (
+                      <button onClick={() => goToSchedule(f.id)} style={{
+                        background: f.hasTimetable ? fac : 'transparent',
+                        color: f.hasTimetable ? '#000' : fac,
+                        border: f.hasTimetable ? 'none' : `1px solid ${fac}60`,
+                        borderRadius: 'var(--fp-radius-sm)',
+                        padding: '9px 18px',
+                        fontFamily: T.body,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        letterSpacing: 2.5,
+                        textTransform: 'uppercase',
+                        marginTop: 2,
+                        marginLeft: 52,
+                        transition: 'all 0.2s ease',
+                      }}>
+                        {f.hasTimetable ? 'Plan This Festival →' : 'Browse Lineup →'}
+                      </button>
+                    )
                   )}
                 </div>
               )
             })}
+
+            {/* ── "You might also like" — related-artist recommendations ─── */}
+            {myArtists.length >= 5 && (recommendations.length > 0 || recommending) && (
+              <div style={{ marginTop: 32 }}>
+                <div style={{
+                  ...sectionLabel('#22d3ee'),
+                  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+                }}>
+                  <span>You might also like</span>
+                  <span style={{
+                    fontSize: 8, padding: '3px 7px', borderRadius: 3,
+                    background: '#22d3ee18', color: '#22d3ee',
+                    fontWeight: 700, letterSpacing: 1,
+                  }}>RELATED ARTISTS</span>
+                  {recommending && (
+                    <span style={{
+                      fontSize: 10, color: 'var(--fp-text-dim)', fontWeight: 400,
+                      letterSpacing: 1, animation: 'fp-pulse 1.5s ease infinite',
+                    }}>Finding...</span>
+                  )}
+                </div>
+
+                {recommending && recommendations.length === 0 ? (
+                  // Skeleton placeholder while loading
+                  [0, 1, 2].map(i => (
+                    <div key={i} style={{
+                      height: 88,
+                      background: 'var(--fp-s2)',
+                      borderRadius: 'var(--fp-radius-lg)',
+                      marginBottom: 12,
+                      opacity: 0.4,
+                      animation: 'fp-pulse 1.5s ease infinite',
+                    }} />
+                  ))
+                ) : recommendations.map((f, idx) => {
+                  const fac = '#22d3ee'
+                  return (
+                    <div key={f.id} style={{
+                      background:    'var(--fp-card)',
+                      border:        `1px solid ${fac}35`,
+                      borderRadius:  'var(--fp-radius-lg)',
+                      padding:       '16px 20px',
+                      marginBottom:  12,
+                      position:      'relative',
+                      overflow:      'hidden',
+                      animation:     `fp-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.08}s both`,
+                    }}>
+                      {/* Left accent bar */}
+                      <div style={{
+                        position: 'absolute', top: 0, left: 0, bottom: 0, width: 3,
+                        background: fac, borderRadius: '3px 0 0 3px', opacity: 0.7,
+                      }} />
+
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingLeft: 6 }}>
+                        <div style={{ fontSize: 28, flexShrink: 0, lineHeight: 1 }}>{f.emoji}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                            <div style={{
+                              fontFamily: T.display, fontSize: 13, fontWeight: 700,
+                              color: fac, textTransform: 'uppercase',
+                            }}>{f.name}</div>
+                            {/* Match counts */}
+                            <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 10, color: 'var(--fp-text-dim)', lineHeight: 1.4 }}>
+                              <span style={{ color: fac, fontWeight: 700 }}>{f.originalMatchCount}</span> direct
+                              <span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>
+                              <span style={{ color: fac, fontWeight: 700 }}>{f.matchDifference}</span> via related
+                            </div>
+                          </div>
+
+                          <div style={{ fontSize: 11, color: 'var(--fp-text-mute)', marginBottom: 8 }}>
+                            {f.location}
+                            {f.days?.length ? ` · ${f.days[0]} – ${f.days[f.days.length - 1]}` : ''}
+                          </div>
+
+                          {/* Related artist chips */}
+                          {f.relatedMatchedArtists?.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                              {f.relatedMatchedArtists.slice(0, 5).map(a => (
+                                <span key={a} style={{
+                                  fontSize: 10, padding: '3px 8px', borderRadius: 3,
+                                  border: `1px solid ${fac}40`, color: fac,
+                                  fontWeight: 600, background: `${fac}08`,
+                                }}>{a}</span>
+                              ))}
+                              {f.relatedMatchedArtists.length > 5 && (
+                                <span style={{ fontSize: 10, color: 'var(--fp-text-dim)', alignSelf: 'center' }}>
+                                  +{f.relatedMatchedArtists.length - 5} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <button onClick={() => goToSchedule(f.id)} style={{
+                            background:    'transparent',
+                            color:         fac,
+                            border:        `1px solid ${fac}50`,
+                            borderRadius:  'var(--fp-radius-sm)',
+                            padding:       '7px 16px',
+                            fontFamily:    T.body,
+                            fontSize:      10,
+                            fontWeight:    800,
+                            cursor:        'pointer',
+                            letterSpacing: 2,
+                            textTransform: 'uppercase',
+                            transition:    'all 0.2s ease',
+                          }}>
+                            Explore Festival →
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
             {discovering && discoveredFestivals.length === 0 && (
               <div style={{
@@ -793,6 +1037,49 @@ export default function SetupPage({ session }) {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Sticky Compare button (appears when ≥2 checked) ──────────────── */}
+        {setupMode === 'find' && compareIds.size >= 2 && (
+          <div style={{
+            position:  'fixed',
+            bottom:    28,
+            left:      '50%',
+            transform: 'translateX(-50%)',
+            zIndex:    9998,
+            animation: 'fp-slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both',
+            pointerEvents: 'none',
+          }}>
+            <button
+              onClick={() => navigate(`/compare?ids=${[...compareIds].join(',')}`)}
+              style={{
+                background:    '#c8f400',
+                color:         '#000',
+                border:        'none',
+                borderRadius:  999,
+                padding:       '12px 26px',
+                fontFamily:    T.body,
+                fontSize:      12,
+                fontWeight:    800,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                cursor:        'pointer',
+                display:       'flex',
+                alignItems:    'center',
+                gap:           10,
+                boxShadow:     '0 6px 36px rgba(200,244,0,0.28), 0 2px 8px rgba(0,0,0,0.4)',
+                whiteSpace:    'nowrap',
+                pointerEvents: 'all',
+              }}
+            >
+              Compare ({compareIds.size})
+              <span style={{ opacity: 0.55, fontSize: 15, letterSpacing: 0 }}>
+                {[...compareIds]
+                  .map(id => discoveredFestivals.find(f => f.id === id)?.emoji || '🎵')
+                  .join('')}
+              </span>
+            </button>
           </div>
         )}
 

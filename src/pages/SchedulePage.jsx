@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FESTIVALS, FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps } from '../lib/festivals'
+import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps } from '../lib/festivals'
+import { fetchTimetable } from '../lib/api'
 import {
   loadSchedule, saveResolution, saveRating, saveFestivalKey,
   loadResolvedFromCache, loadRatingsFromCache,
@@ -28,7 +29,7 @@ export default function SchedulePage({ session }) {
   const navigate = useNavigate()
   const userId = session?.user?.id
 
-  // ── Stable derived festival data (memo-ised from localStorage) ────────────
+  // ── Stable derived data from localStorage ────────────────────────────────
   const myArtists = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('festplan_artists') || '[]') } catch { return [] }
   }, [])
@@ -36,36 +37,45 @@ export default function SchedulePage({ session }) {
   const festMeta = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('festplan_festival_meta') || 'null') } catch { return null }
   }, [])
-  const fest = useMemo(() => {
-    if (!festId) return null
-    // Hardcoded festivals always take precedence — full timetable available.
-    if (FESTIVALS[festId]) return FESTIVALS[festId]
-    // Live-discovered festival: rebuild from saved discovery metadata.
-    if (festMeta && festMeta.id === festId) {
-      return {
-        id: festMeta.id,
-        name: festMeta.name,
-        location: festMeta.location || '',
-        emoji: festMeta.emoji || '🎵',
-        days: [],
-        stages: [],
-        lineup: (festMeta.matchedArtists || []).map(artist => ({
-          artist, stage: null, day: null, start: null, end: null,
-        })),
-        hasTimetable: false,
-        accentColor: festMeta.accentColor || null,
+
+  // ── Festival data — loaded async from Supabase ────────────────────────────
+  const [fest, setFest] = useState(null)
+  const [festReady, setFestReady] = useState(false)
+
+  useEffect(() => {
+    if (!festId) { setFestReady(true); return }
+    fetchTimetable(festId).then(result => {
+      if (result?.festival) {
+        setFest(result.festival)
+      } else if (festMeta && festMeta.id === festId) {
+        // Supabase unavailable and no seeded data yet — fall back to saved
+        // discovery metadata (lineup-only shape).
+        setFest({
+          id: festMeta.id,
+          name: festMeta.name,
+          location: festMeta.location || '',
+          emoji: festMeta.emoji || '🎵',
+          days: [],
+          stages: [],
+          lineup: (festMeta.matchedArtists || []).map(artist => ({
+            artist, stage: null, day: null, start: null, end: null,
+          })),
+          hasTimetable: false,
+          accentColor: festMeta.accentColor || null,
+        })
       }
-    }
-    return null
-  }, [festId, festMeta])
+      setFestReady(true)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // True when the festival has no published timetable.
   const isLineupOnly = fest ? fest.hasTimetable === false : false
   const fa = fest ? (FEST_COLORS[fest.id] || fest.accentColor || '#c8f400') : '#c8f400'
 
+  // Redirect to setup once the Supabase fetch has settled and there's nothing to show.
   useEffect(() => {
-    if (!festId || !myArtists.length || !fest) navigate('/setup', { replace: true })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (festReady && (!festId || !myArtists.length || !fest)) navigate('/setup', { replace: true })
+  }, [festReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [day,          setDay]          = useState(0)

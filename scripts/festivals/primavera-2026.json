@@ -1,0 +1,64 @@
+{
+  "id": "primavera",
+  "name": "Primavera Sound 2026",
+  "location": "Barcelona, Spain",
+  "emoji": "🌊",
+  "accentColor": "#ff5577",
+  "startDate": "2026-06-04",
+  "endDate": "2026-06-07",
+  "days": [
+    "Thu Jun 4",
+    "Fri Jun 5",
+    "Sat Jun 6",
+    "Sun Jun 7"
+  ],
+  "stages": [
+    "Primavera Stage",
+    "Pitchfork Stage",
+    "Desperados Stage",
+    "Ray-Ban Stage",
+    "Green Stage"
+  ],
+  "lineup": [
+    { "artist": "Doja Cat",          "stage": "Primavera Stage",  "day": 0, "start": "22:30", "end": "00:00" },
+    { "artist": "Massive Attack",    "stage": "Primavera Stage",  "day": 0, "start": "20:30", "end": "22:00" },
+    { "artist": "Blood Orange",      "stage": "Pitchfork Stage",  "day": 0, "start": "21:00", "end": "22:30" },
+    { "artist": "Mac DeMarco",       "stage": "Ray-Ban Stage",    "day": 0, "start": "20:00", "end": "21:00" },
+    { "artist": "Alex G",            "stage": "Green Stage",      "day": 0, "start": "19:30", "end": "20:30" },
+    { "artist": "Father John Misty", "stage": "Pitchfork Stage",  "day": 0, "start": "19:00", "end": "20:30" },
+    { "artist": "TV Girl",           "stage": "Ray-Ban Stage",    "day": 0, "start": "18:00", "end": "19:00" },
+    { "artist": "Overmono",          "stage": "Desperados Stage", "day": 0, "start": "22:00", "end": "23:30" },
+    { "artist": "Bad Gyal",          "stage": "Desperados Stage", "day": 0, "start": "20:30", "end": "21:30" },
+    { "artist": "Ravyn Lenae",       "stage": "Green Stage",      "day": 0, "start": "21:00", "end": "22:00" },
+
+    { "artist": "The Cure",          "stage": "Primavera Stage",  "day": 1, "start": "22:00", "end": "00:00" },
+    { "artist": "Skrillex",          "stage": "Desperados Stage", "day": 1, "start": "23:00", "end": "01:00" },
+    { "artist": "PinkPantheress",    "stage": "Primavera Stage",  "day": 1, "start": "20:30", "end": "21:30" },
+    { "artist": "Ethel Cain",        "stage": "Pitchfork Stage",  "day": 1, "start": "21:00", "end": "22:00" },
+    { "artist": "Amaarae",           "stage": "Ray-Ban Stage",    "day": 1, "start": "20:00", "end": "21:00" },
+    { "artist": "Slowdive",          "stage": "Green Stage",      "day": 1, "start": "21:00", "end": "22:15" },
+    { "artist": "Addison Rae",       "stage": "Primavera Stage",  "day": 1, "start": "19:00", "end": "20:00" },
+    { "artist": "Rilo Kiley",        "stage": "Pitchfork Stage",  "day": 1, "start": "19:30", "end": "20:45" },
+    { "artist": "Viagra Boys",       "stage": "Ray-Ban Stage",    "day": 1, "start": "18:30", "end": "19:30" },
+    { "artist": "JADE",              "stage": "Green Stage",      "day": 1, "start": "18:00", "end": "19:00" },
+    { "artist": "Ralphie Choo",      "stage": "Desperados Stage", "day": 1, "start": "19:30", "end": "20:30" },
+
+    { "artist": "The xx",            "stage": "Primavera Stage",  "day": 2, "start": "22:30", "end": "00:00" },
+    { "artist": "Gorillaz",          "stage": "Primavera Stage",  "day": 2, "start": "20:30", "end": "22:00" },
+    { "artist": "my bloody valentine","stage": "Pitchfork Stage", "day": 2, "start": "22:00", "end": "00:00" },
+    { "artist": "Peggy Gou",         "stage": "Desperados Stage", "day": 2, "start": "23:00", "end": "01:00" },
+    { "artist": "Little Simz",       "stage": "Ray-Ban Stage",    "day": 2, "start": "21:00", "end": "22:00" },
+    { "artist": "Big Thief",         "stage": "Green Stage",      "day": 2, "start": "21:00", "end": "22:15" },
+    { "artist": "Dijon",             "stage": "Pitchfork Stage",  "day": 2, "start": "20:00", "end": "21:00" },
+    { "artist": "KNEECAP",           "stage": "Ray-Ban Stage",    "day": 2, "start": "19:00", "end": "20:00" },
+    { "artist": "MARINA",            "stage": "Primavera Stage",  "day": 2, "start": "19:00", "end": "20:00" },
+    { "artist": "Ashnikko",          "stage": "Green Stage",      "day": 2, "start": "19:00", "end": "20:00" },
+    { "artist": "Knocked Loose",     "stage": "Desperados Stage", "day": 2, "start": "20:00", "end": "21:00" },
+    { "artist": "Lambrini Girls",    "stage": "Ray-Ban Stage",    "day": 2, "start": "17:30", "end": "18:30" },
+    { "artist": "Touché Amoré",     "stage": "Pitchfork Stage",  "day": 2, "start": "18:00", "end": "19:00" },
+
+    { "artist": "Carl Cox",          "stage": "Desperados Stage", "day": 3, "start": "23:00", "end": "02:00" },
+    { "artist": "BLOND:ISH",         "stage": "Desperados Stage", "day": 3, "start": "21:00", "end": "23:00" },
+    { "artist": "Joseph Capriati",   "stage": "Primavera Stage",  "day": 3, "start": "22:00", "end": "00:00" }
+  ]
+}

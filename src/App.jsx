@@ -4,19 +4,107 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
 import { SyncProvider, drainPendingWrites } from './lib/sync-state'
-import { usePwaInstallPrompt } from './lib/pwa-install'
+import { usePwaInstallPrompt, usePwaUpdate } from './lib/pwa-install'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
 import JoinPage from './pages/JoinPage'
 import AdminIngest from './pages/AdminIngest'
+import ComparePage from './pages/ComparePage'
 import AdminFestivals from './pages/AdminFestivals'
 import AdminFestivalEdit from './pages/AdminFestivalEdit'
 
 // ── PWA install banner ────────────────────────────────────────────────────────
 
-const DISMISS_KEY   = 'festplan_pwa_dismiss_until'
-const DISMISS_MS    = 30 * 24 * 60 * 60 * 1000   // 30 days
+const DISMISS_KEY        = 'festplan_pwa_dismiss_until'
+const DISMISS_MS         = 30 * 24 * 60 * 60 * 1000   // 30 days
+
+// ── PWA update toast ──────────────────────────────────────────────────────────
+
+const UPDATE_DISMISS_KEY = 'festplan_update_dismiss_until'
+const UPDATE_DISMISS_MS  = 24 * 60 * 60 * 1000        // 24 hours
+
+/**
+ * Fixed top-centre toast shown when a new service worker has installed and
+ * the page's JS bundle is stale.  Dismissable; reappears after 24 h if the
+ * SW still reports needRefresh (i.e. the user still hasn't reloaded).
+ */
+function UpdateToast() {
+  const { needRefresh, reload } = usePwaUpdate()
+  const [visible, setVisible]  = useState(false)
+
+  useEffect(() => {
+    if (!needRefresh) return
+    const until = parseInt(localStorage.getItem(UPDATE_DISMISS_KEY) || '0', 10)
+    if (Date.now() >= until) setVisible(true)
+  }, [needRefresh])
+
+  if (!visible) return null
+
+  function dismiss() {
+    localStorage.setItem(UPDATE_DISMISS_KEY, String(Date.now() + UPDATE_DISMISS_MS))
+    setVisible(false)
+  }
+
+  return (
+    <div style={{
+      position:     'fixed',
+      top:          12,
+      left:         '50%',
+      transform:    'translateX(-50%)',
+      zIndex:       10000,
+      display:      'flex',
+      alignItems:   'center',
+      gap:          10,
+      padding:      '10px 14px',
+      background:   '#c8f400',
+      borderRadius: '999px',
+      boxShadow:    '0 4px 24px rgba(0,0,0,0.5)',
+      fontFamily:   "var(--fp-font-body, 'Outfit', sans-serif)",
+      fontSize:     12,
+      whiteSpace:   'nowrap',
+      animation:    'fp-slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) both',
+    }}>
+      <span style={{ fontSize: 14 }}>✦</span>
+      <span style={{ color: '#000', fontWeight: 600 }}>
+        New version available
+      </span>
+      <button
+        onClick={reload}
+        style={{
+          background:    '#000',
+          color:         '#c8f400',
+          border:        'none',
+          borderRadius:  '999px',
+          padding:       '5px 14px',
+          fontFamily:    "var(--fp-font-body, 'Outfit', sans-serif)",
+          fontSize:      11,
+          fontWeight:    800,
+          letterSpacing: 1.5,
+          textTransform: 'uppercase',
+          cursor:        'pointer',
+        }}
+      >
+        Reload
+      </button>
+      <button
+        onClick={dismiss}
+        aria-label="Dismiss update notification"
+        style={{
+          background: 'transparent',
+          border:     'none',
+          color:      'rgba(0,0,0,0.45)',
+          cursor:     'pointer',
+          fontSize:   16,
+          lineHeight: 1,
+          padding:    '2px 4px',
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}
 
 function InstallBanner() {
   const { canInstall, promptInstall, isInstalled } = usePwaInstallPrompt()
@@ -170,6 +258,7 @@ export default function App() {
   return (
     <SyncProvider>
       <InstallBanner />
+      <UpdateToast />
       <Routes>
         <Route
           path="/"
@@ -182,6 +271,10 @@ export default function App() {
         <Route
           path="/schedule"
           element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/compare"
+          element={session ? <ComparePage session={session} /> : <Navigate to="/" replace />}
         />
         <Route path="/auth/callback" element={<AuthCallback />} />
         {/* /join/:slug works whether logged in or not — JoinPage handles both */}
