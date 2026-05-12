@@ -1,3 +1,4 @@
+import React from 'react'
 import { pillBtn } from '../../lib/ui'
 import { useIsMobile } from '../../lib/use-is-mobile'
 

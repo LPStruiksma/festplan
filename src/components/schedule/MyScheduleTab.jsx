@@ -1,3 +1,4 @@
+import React from 'react'
 import { T } from '../../lib/ui'
 import { useIsMobile } from '../../lib/use-is-mobile'
 import DaySelector from './DaySelector'

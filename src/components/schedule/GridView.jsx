@@ -1,3 +1,4 @@
+import React from 'react'
 import { T } from '../../lib/ui'
 import { toMins, norm } from '../../lib/festivals'
 

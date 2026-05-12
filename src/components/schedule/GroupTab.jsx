@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { T, pillBtn } from '../../lib/ui'
 import { FRIEND_COLORS, norm, toMins } from '../../lib/festivals'
 import { useIsMobile } from '../../lib/use-is-mobile'
