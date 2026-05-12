@@ -91,10 +91,21 @@ export async function fetchTimetable(festivalId) {
 
       if (!hasTimetable && meta) {
         // Festival is known but the timetable hasn't been published yet.
-        // Return a lineup-only shape so SchedulePage can render without crashing.
-        // Artist names come from meta.lineup, meta.artists, or meta.matchedArtists
-        // depending on which edge-function path was hit.
-        const knownArtists = meta.lineup || meta.artists || meta.matchedArtists || []
+        // Artist names may come from:
+        //   (a) null-time timetable_slots ingested via ingest-festival-timetable
+        //   (b) meta.lineup / meta.artists / meta.matchedArtists from the
+        //       discover-festivals path.
+        // Prefer (a) when timetable rows are present (they have the canonical
+        // artist names as stored); fall back to (b) for discovery-only results.
+        let knownArtists
+        if (timetable && timetable.length > 0) {
+          // timetable_slots rows with null start_time — extract artist names
+          knownArtists = timetable.map(s => s.artist).filter(Boolean)
+        } else {
+          const raw = meta.lineup || meta.artists || meta.matchedArtists || []
+          knownArtists = raw.map(a => (typeof a === 'string' ? a : a.name))
+        }
+
         return {
           source: 'supabase-lineup-only',
           festival: {
@@ -104,15 +115,15 @@ export async function fetchTimetable(festivalId) {
             emoji: meta.emoji || '🎵',
             days: [],
             stages: [],
-            lineup: knownArtists.map(a => ({
-              artist: typeof a === 'string' ? a : a.name,
+            lineup: knownArtists.map(artist => ({
+              artist,
               stage: null,
               day: null,
               start: null,
               end: null,
             })),
             hasTimetable: false,
-            accentColor: meta.accentColor || null,
+            accentColor: meta.accentColor || meta.accent_color || null,
           },
         }
       }

@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
 import JoinPage from './pages/JoinPage'
+import AdminIngest from './pages/AdminIngest'
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -91,6 +92,10 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         {/* /join/:slug works whether logged in or not — JoinPage handles both */}
         <Route path="/join/:slug" element={<JoinPage session={session} />} />
+        <Route
+          path="/admin/ingest"
+          element={<AdminIngest session={session} />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </SyncProvider>

@@ -393,7 +393,10 @@ serve(async (req) => {
       return jsonResponse({
         festival: meta,
         timetable: slots,
-        hasTimetable: slots.length > 0,
+        // hasTimetable is true only when at least one slot has actual times.
+        // Slots with null start_time were ingested as lineup-only data and
+        // should render in "lineup-only" mode, not as a full timetable.
+        hasTimetable: slots.some(s => s.start_time !== null),
       })
     }
 
@@ -426,10 +429,14 @@ serve(async (req) => {
 
     const metaMap = new Map((metaRows || []).map(r => [r.festival_key, r]))
 
+    // Only count slots that have actual times — lineup-only slots (null
+    // start_time) must NOT cause hasTimetable to be set to true, because
+    // SchedulePage would try to render a grid with no time data.
     const { data: slotCounts } = await sb
       .from('timetable_slots')
       .select('festival_key')
       .in('festival_key', festivalKeys)
+      .not('start_time', 'is', null)
 
     const hasTimetable = new Set((slotCounts || []).map(r => r.festival_key))
 
