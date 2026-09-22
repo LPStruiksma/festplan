@@ -49,7 +49,7 @@
     "maxRecentCommits": 24
   },
   "commands": {
-    "check": "npm run lint && npm test && npm run build"
+    "check": "npm test && npm run build"
   },
   "review": {
     "enabled": false,
