@@ -50,7 +50,9 @@ jobs:
           if (manifest.project?.repository !== 'LPStruiksma/festplan') throw new Error('Unexpected tenant repository')
           if (manifest.authority?.autonomyMode !== 'observe') throw new Error('Initial Tenant #2 declaration must remain observe-only')
           if (lock.mode !== 'shadow' || lock.authorityEffect !== 'NONE') throw new Error('Tenant lock must remain shadow / authority NONE')
-          if (lock.distribution?.commitSha !== '95895991bdcd28b0aa7a51de9f1927579838c824') throw new Error('Unexpected AutoDev distribution pin')
-          if (JSON.stringify(lock.capabilities) !== JSON.stringify(['project-intake','task-selection'])) throw new Error('Unexpected capability set')
-          console.log('FestPlan tenant declaration is exact, observe-only, and authority-neutral.')
+          if (lock.distribution?.commitSha !== '7c7988aa33b0186000ea883264720651320f73ce') throw new Error('Unexpected AutoDev distribution pin')
+          if (JSON.stringify(lock.capabilities) !== JSON.stringify(['project-intake','task-selection','project-development-lead'])) throw new Error('Unexpected capability set')
+          if (lock.distribution?.version !== '0.1.0-shadow.6') throw new Error('Unexpected AutoDev distribution version')
+          if (lock.rollback?.previousCommitSha !== '95895991bdcd28b0aa7a51de9f1927579838c824' || lock.rollback?.tested !== true) throw new Error('Expected proven rollback target is missing')
+          console.log('FestPlan tenant declaration is exact, observe-only, authority-neutral, and ready for the approved read-only project lead canary.')
           NODE
