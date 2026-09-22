@@ -1,0 +1,86 @@
+name: AutoDev Tenant 2 Shadow
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autodev-tenant2-shadow-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  tenant-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact tenant candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 32
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run tenant deterministic checks
+        run: npm run lint && npm test && npm run build
+
+  autodev-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact tenant candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 32
+          persist-credentials: false
+
+      - name: Run exact pinned AutoDev Project Intake
+        id: intake
+        uses: LPStruiksma/autodev/.github/actions/project-intake@95895991bdcd28b0aa7a51de9f1927579838c824
+        with:
+          manifest-path: .autodev/project.json
+          lock-path: .autodev/autodev.lock.json
+          output-path: autodev-shadow/project-intake.json
+          bundle-output-path: .autodev-ephemeral/project-intake-bundle.json
+
+      - name: Prove external task-selection request semantics
+        env:
+          AUTODEV_EXTERNAL_ROOT: ${{ steps.intake.outputs.autodev-root }}
+          AUTODEV_STATE_BUNDLE_PATH: ${{ steps.intake.outputs.bundle-path }}
+          AUTODEV_INTAKE_REPORT_PATH: ${{ steps.intake.outputs.report-path }}
+        run: node scripts/run-autodev-task-selection-shadow.mjs
+
+      - name: Record shadow identity
+        shell: bash
+        run: |
+          {
+            echo "### AutoDev Tenant #2 Shadow"
+            echo
+            echo "- AutoDev commit: 95895991bdcd28b0aa7a51de9f1927579838c824"
+            echo "- Tenant commit: ${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "- Report SHA-256: ${{ steps.intake.outputs.report-sha256 }}"
+            echo "- Authority effect: NONE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload safe shadow receipts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: autodev-tenant2-shadow-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            autodev-shadow/project-intake.json
+            autodev-shadow/task-selection-shadow.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
