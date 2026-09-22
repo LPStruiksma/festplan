@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "festplan",
+    "displayName": "FestPlan",
+    "repository": "LPStruiksma/festplan",
+    "defaultBranch": "main",
+    "trustedDevelopmentBranches": [
+      "main"
+    ]
+  },
+  "authority": {
+    "autonomyMode": "observe",
+    "automationBranchPrefix": "autodev/",
+    "protectedBranches": [
+      "main"
+    ],
+    "humanOnly": [
+      "production-credentials",
+      "production-deployment",
+      "production-data-destructive-migration",
+      "oauth-provider-console-configuration",
+      "external-service-spend"
+    ],
+    "forbiddenPaths": [
+      ".env",
+      ".env.local",
+      "supabase/.temp",
+      ".vercel"
+    ]
+  },
+  "state": {
+    "requiredDocs": [
+      "DEVELOPMENT_REPORT.md",
+      "package.json",
+      "vite.config.js",
+      ".gitignore"
+    ],
+    "recentDocGroups": [],
+    "excludedPaths": [
+      "node_modules",
+      "dist",
+      "supabase/.temp",
+      ".vercel"
+    ],
+    "maxCharsPerDocument": 40000,
+    "maxTotalChars": 120000,
+    "minHeadroomChars": 20000,
+    "maxRecentCommits": 24
+  },
+  "commands": {
+    "check": "npm test && npm run build"
+  },
+  "review": {
+    "enabled": false,
+    "maxCorrectionLoops": 0,
+    "configPath": null,
+    "captureCommand": null
+  },
+  "budgets": {
+    "maxAutonomousTransitionsPerCycle": 8,
+    "maxModelCostUsdPerCycle": 2,
+    "maxWallClockMinutesPerCycle": 60,
+    "maxRetriesPerTransition": 1
+  },
+  "promotion": {
+    "requireChecks": true,
+    "requireIndependentReview": true,
+    "allowDirectProtectedBranchWrite": false,
+    "autoMergeCategories": [],
+    "humanMergePaths": [
+      ".github/workflows/**",
+      ".autodev/project.json",
+      ".autodev/autodev.lock.json"
+    ],
+    "authoritySensitivePaths": []
+  }
+}

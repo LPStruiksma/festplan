@@ -1,0 +1,22 @@
+{
+  "lockType": "autodev-tenant-lock",
+  "schemaVersion": 1,
+  "tenantId": "festplan",
+  "projectId": "festplan",
+  "mode": "shadow",
+  "distribution": {
+    "repository": "LPStruiksma/autodev",
+    "commitSha": "95895991bdcd28b0aa7a51de9f1927579838c824",
+    "version": "0.1.0-shadow.4",
+    "channel": "shadow"
+  },
+  "capabilities": [
+    "project-intake",
+    "task-selection"
+  ],
+  "authorityEffect": "NONE",
+  "rollback": {
+    "previousCommitSha": null,
+    "tested": false
+  }
+}

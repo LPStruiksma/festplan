@@ -1,0 +1,56 @@
+name: AutoDev Tenant 2 Baseline
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autodev-tenant2-baseline-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  tenant-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact tenant candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 32
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run current required tenant checks
+        run: npm test && npm run build
+
+      - name: Measure pre-existing lint debt
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Validate observe-only AutoDev declaration
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const manifest = JSON.parse(await readFile('.autodev/project.json', 'utf8'))
+          const lock = JSON.parse(await readFile('.autodev/autodev.lock.json', 'utf8'))
+          if (manifest.project?.id !== 'festplan') throw new Error('Unexpected tenant project id')
+          if (manifest.project?.repository !== 'LPStruiksma/festplan') throw new Error('Unexpected tenant repository')
+          if (manifest.authority?.autonomyMode !== 'observe') throw new Error('Initial Tenant #2 declaration must remain observe-only')
+          if (lock.mode !== 'shadow' || lock.authorityEffect !== 'NONE') throw new Error('Tenant lock must remain shadow / authority NONE')
+          if (lock.distribution?.commitSha !== '95895991bdcd28b0aa7a51de9f1927579838c824') throw new Error('Unexpected AutoDev distribution pin')
+          if (JSON.stringify(lock.capabilities) !== JSON.stringify(['project-intake','task-selection'])) throw new Error('Unexpected capability set')
+          console.log('FestPlan tenant declaration is exact, observe-only, and authority-neutral.')
+          NODE
