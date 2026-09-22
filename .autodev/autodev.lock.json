@@ -6,17 +6,18 @@
   "mode": "shadow",
   "distribution": {
     "repository": "LPStruiksma/autodev",
-    "commitSha": "95895991bdcd28b0aa7a51de9f1927579838c824",
-    "version": "0.1.0-shadow.4",
+    "commitSha": "7c7988aa33b0186000ea883264720651320f73ce",
+    "version": "0.1.0-shadow.6",
     "channel": "shadow"
   },
   "capabilities": [
     "project-intake",
-    "task-selection"
+    "task-selection",
+    "project-development-lead"
   ],
   "authorityEffect": "NONE",
   "rollback": {
-    "previousCommitSha": null,
-    "tested": false
+    "previousCommitSha": "95895991bdcd28b0aa7a51de9f1927579838c824",
+    "tested": true
   }
 }
