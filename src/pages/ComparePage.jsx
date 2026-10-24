@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { fetchTimetable } from '../lib/api'
 import { norm } from '../lib/festivals'
@@ -201,7 +201,12 @@ export default function ComparePage() {
         const enriched = ids.map((id, i) => {
           const r = results[i]
           if (r.status === 'fulfilled' && r.value?.festival) {
-            return enrichFestival(r.value.festival)
+            // Malformed data for one festival must not stall the whole page.
+            try {
+              return enrichFestival(r.value.festival)
+            } catch (e) {
+              return errorEntry(id, e?.message)
+            }
           }
           const msg = r.status === 'rejected'
             ? (r.reason?.message || 'Unknown error')
