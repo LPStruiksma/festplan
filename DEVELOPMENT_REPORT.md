@@ -462,9 +462,9 @@ Icon generation caveat: the favicon SVG uses `color(display-p3 ...)` which Image
      UNIQUE (festival_key, artist, day_index);
    ```
 
-5. **Verify `.env.local`** contains `VITE_ADMIN_EMAIL=lukas.struiksma@cbre.com`.
+5. **Verify `.env.local`** contains `VITE_ADMIN_EMAIL=you@example.com`.
 
-6. **Verify Supabase secrets** contain both `ADMIN_EMAIL=lukas.struiksma@cbre.com` and `TICKETMASTER_API_KEY=...`.
+6. **Verify Supabase secrets** contain both `ADMIN_EMAIL=you@example.com` and `TICKETMASTER_API_KEY=...`.
 
 ### Post-session fix — vite-plugin-pwa version
 
