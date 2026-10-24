@@ -40,10 +40,10 @@ export default function SchedulePage({ session }) {
 
   // ── Festival data — loaded async from Supabase ────────────────────────────
   const [fest, setFest] = useState(null)
-  const [festReady, setFestReady] = useState(false)
+  const [festReady, setFestReady] = useState(!festId)
 
   useEffect(() => {
-    if (!festId) { setFestReady(true); return }
+    if (!festId) return
     fetchTimetable(festId).then(result => {
       if (result?.festival) {
         setFest(result.festival)

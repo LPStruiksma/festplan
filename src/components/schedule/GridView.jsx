@@ -12,9 +12,9 @@ const G_START = 14 * 60, CELL_H = 42, COL_W = 128, TIME_W = 50, G_ROWS = 24
  *   dayLineup  — all slots for the selected day (from fest.lineup)
  *   stages     — ordered stage name array
  *   myArtists  — user's saved artist list (for highlight)
- *   fa         — festival accent colour hex
+ *   fa         — festival accent colour hex (accepted, currently unused)
  */
-export default function GridView({ dayLineup, stages, myArtists, fa }) {
+export default function GridView({ dayLineup, stages, myArtists }) {
   const totalH = G_ROWS * CELL_H
   const labels = []
   for (let r = 0; r < G_ROWS; r++) {

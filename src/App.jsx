@@ -24,6 +24,11 @@ const DISMISS_MS         = 30 * 24 * 60 * 60 * 1000   // 30 days
 const UPDATE_DISMISS_KEY = 'festplan_update_dismiss_until'
 const UPDATE_DISMISS_MS  = 24 * 60 * 60 * 1000        // 24 hours
 
+/** True while a dismissal stored under `key` has not expired yet. */
+function isSnoozed(key) {
+  return Date.now() < parseInt(localStorage.getItem(key) || '0', 10)
+}
+
 /**
  * Fixed top-centre toast shown when a new service worker has installed and
  * the page's JS bundle is stale.  Dismissable; reappears after 24 h if the
@@ -31,19 +36,13 @@ const UPDATE_DISMISS_MS  = 24 * 60 * 60 * 1000        // 24 hours
  */
 function UpdateToast() {
   const { needRefresh, reload } = usePwaUpdate()
-  const [visible, setVisible]  = useState(false)
+  const [snoozed, setSnoozed]  = useState(() => isSnoozed(UPDATE_DISMISS_KEY))
 
-  useEffect(() => {
-    if (!needRefresh) return
-    const until = parseInt(localStorage.getItem(UPDATE_DISMISS_KEY) || '0', 10)
-    if (Date.now() >= until) setVisible(true)
-  }, [needRefresh])
-
-  if (!visible) return null
+  if (!needRefresh || snoozed) return null
 
   function dismiss() {
     localStorage.setItem(UPDATE_DISMISS_KEY, String(Date.now() + UPDATE_DISMISS_MS))
-    setVisible(false)
+    setSnoozed(true)
   }
 
   return (
@@ -108,25 +107,18 @@ function UpdateToast() {
 
 function InstallBanner() {
   const { canInstall, promptInstall, isInstalled } = usePwaInstallPrompt()
-  const [visible, setVisible] = useState(false)
+  const [snoozed, setSnoozed] = useState(() => isSnoozed(DISMISS_KEY))
 
-  useEffect(() => {
-    if (!canInstall || isInstalled) return
-    const until = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10)
-    if (Date.now() < until) return
-    setVisible(true)
-  }, [canInstall, isInstalled])
-
-  if (!visible) return null
+  if (!canInstall || isInstalled || snoozed) return null
 
   function dismiss() {
     localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_MS))
-    setVisible(false)
+    setSnoozed(true)
   }
 
   async function install() {
     const result = await promptInstall()
-    if (result?.outcome === 'accepted') setVisible(false)
+    if (result?.outcome === 'accepted') setSnoozed(true)
     else dismiss()
   }
 

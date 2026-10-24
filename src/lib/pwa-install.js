@@ -43,19 +43,21 @@ export function usePwaUpdate() {
   }
 }
 
+// Standalone / TWA mode means the app is already installed.
+function isStandalone() {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true   // iOS Safari
+  )
+}
+
 export function usePwaInstallPrompt() {
   const [canInstall,  setCanInstall]  = useState(false)
-  const [isInstalled, setIsInstalled] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(isStandalone)
   const deferredRef = useRef(null)   // holds the BeforeInstallPromptEvent
 
   useEffect(() => {
-    // Detect standalone / TWA mode — already installed.
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true   // iOS Safari
-
-    setIsInstalled(standalone)
-    if (standalone) return
+    if (isStandalone()) return
 
     const handler = (e) => {
       // Prevent Chrome's default mini-infobar so we can show our own UI.

@@ -164,6 +164,15 @@ export default function AdminFestivalEdit({ session }) {
     )
   }
 
+  return <AdminFestivalEditContent key={festivalKey} />
+}
+
+// Hooks live here, below the auth gate component, so the hook count never
+// changes when the session arrives after mount.
+function AdminFestivalEditContent() {
+  const navigate = useNavigate()
+  const { id: festivalKey } = useParams()
+
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState(null)
   const [meta,    setMeta]    = useState(null)
@@ -172,8 +181,8 @@ export default function AdminFestivalEdit({ session }) {
   const [activeTab, setActiveTab] = useState('metadata')
 
   // ── Load festival ──────────────────────────────────────────────────────────
+  // The gate keys this component by festival, so loading starts true per festival.
   useEffect(() => {
-    setLoading(true)
     getFestivalWithSlots(decodeURIComponent(festivalKey))
       .then(({ meta, slots }) => {
         setMeta(meta)

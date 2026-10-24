@@ -266,6 +266,14 @@ export default function AdminIngest({ session }) {
     )
   }
 
+  return <AdminIngestContent session={session} />
+}
+
+// Hooks live here, below the auth gate component, so the hook count never
+// changes when the session arrives after mount.
+function AdminIngestContent({ session }) {
+  const navigate = useNavigate()
+
   // ── State ──
   const [multiDay,   setMultiDay]   = useState(false)
   const [eventId,    setEventId]    = useState('')         // single-day
