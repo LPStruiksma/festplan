@@ -1,10 +1,11 @@
 import AuthCallback from './pages/AuthCallback'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
 import { SyncProvider, drainPendingWrites } from './lib/sync-state'
 import { usePwaInstallPrompt, usePwaUpdate } from './lib/pwa-install'
+import RouteErrorBoundary from './components/RouteErrorBoundary'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
@@ -220,6 +221,7 @@ function LoadingScreen() {
 
 export default function App() {
   const [session, setSession] = useState(undefined)
+  const { pathname } = useLocation()
   const drainedRef = useRef(false)
 
   useEffect(() => {
@@ -256,42 +258,44 @@ export default function App() {
     <SyncProvider>
       <InstallBanner />
       <UpdateToast />
-      <Suspense fallback={<LoadingScreen />}>
-        <Routes>
-          <Route
-            path="/"
-            element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
-          />
-          <Route
-            path="/setup"
-            element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
-          />
-          <Route
-            path="/schedule"
-            element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
-          />
-          <Route
-            path="/compare"
-            element={session ? <ComparePage session={session} /> : <Navigate to="/" replace />}
-          />
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          {/* /join/:slug works whether logged in or not — JoinPage handles both */}
-          <Route path="/join/:slug" element={<JoinPage session={session} />} />
-          <Route
-            path="/admin/ingest"
-            element={<AdminIngest session={session} />}
-          />
-          <Route
-            path="/admin/festivals"
-            element={<AdminFestivals session={session} />}
-          />
-          <Route
-            path="/admin/festivals/:id"
-            element={<AdminFestivalEdit session={session} />}
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+      <RouteErrorBoundary resetKey={pathname}>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route
+              path="/"
+              element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
+            />
+            <Route
+              path="/setup"
+              element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/schedule"
+              element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/compare"
+              element={session ? <ComparePage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            {/* /join/:slug works whether logged in or not — JoinPage handles both */}
+            <Route path="/join/:slug" element={<JoinPage session={session} />} />
+            <Route
+              path="/admin/ingest"
+              element={<AdminIngest session={session} />}
+            />
+            <Route
+              path="/admin/festivals"
+              element={<AdminFestivals session={session} />}
+            />
+            <Route
+              path="/admin/festivals/:id"
+              element={<AdminFestivalEdit session={session} />}
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </RouteErrorBoundary>
     </SyncProvider>
   )
 }
