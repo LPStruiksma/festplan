@@ -155,3 +155,94 @@ export function useGroupSync(groupUserIds, festivalKey, onUpdate) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [festivalKey, userIdsKey])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useFriendsSync — keep the friends list in sync across the user's devices.
+//
+// The friends table is owner-only under RLS, so this subscribes to the current
+// user's own rows (filter user_id=eq.<userId>).  saveFriends() rewrites the
+// whole set (DELETE then INSERT), so a single save arrives as a burst of
+// events, and DELETE payloads carry only the primary key.  Rather than rebuild
+// the list from the burst, each burst is coalesced into one authoritative
+// reload through `load` (loadFriends), FRIENDS_RELOAD_DELAY ms after the last
+// event.  While a local friends save is still pending, the reload waits so it
+// cannot overwrite an edit that has not reached the server yet.
+//
+// Needs public.friends in the supabase_realtime publication; without it the
+// channel stays silent and the list refreshes on the next mount, as before.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const FRIENDS_RELOAD_DELAY = 400
+
+/**
+ * useFriendsSync
+ *
+ * @param {string}  userId       The signed-in user.  Falsy → no subscription.
+ * @param {string}  festivalKey  Festival whose friends list is shown.
+ * @param {Object}  opts
+ * @param {function(string, string): Promise<Object[]|null>} opts.load
+ *        Fetches the friends list (loadFriends).  null means the fetch failed
+ *        and is not applied.
+ * @param {function(Object[]): void} opts.onFriends  Receives the reloaded list.
+ * @param {function(): boolean} [opts.isLocalSavePending]  True while a local
+ *        friends save is queued; the reload is retried later.
+ *        Callbacks are read via ref, so inline functions are fine.
+ */
+export function useFriendsSync(userId, festivalKey, opts) {
+  const optsRef = useRef(opts)
+  useEffect(() => { optsRef.current = opts })
+
+  useEffect(() => {
+    if (!userId || !festivalKey) return
+
+    let isMounted = true
+    let timer = null
+
+    const reload = () => {
+      timer = null
+      if (!isMounted) return
+      const { load, isLocalSavePending } = optsRef.current
+      if (isLocalSavePending?.()) {
+        timer = setTimeout(reload, FRIENDS_RELOAD_DELAY)
+        return
+      }
+      Promise.resolve(load(userId, festivalKey)).then(friends => {
+        if (isMounted && friends !== null && friends !== undefined) {
+          optsRef.current.onFriends(friends)
+        }
+      })
+    }
+
+    const channelName = `friends-sync:${festivalKey}:${userId}`
+    const ch = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event:  '*',
+          schema: 'public',
+          table:  'friends',
+          filter: `user_id=eq.${userId}`,
+        },
+        payload => {
+          if (!isMounted) return
+          // DELETE payloads hold only the id, so they always pass this guard.
+          const row = payload.new ?? payload.old ?? {}
+          if (row.festival_key && row.festival_key !== festivalKey) return
+          clearTimeout(timer)
+          timer = setTimeout(reload, FRIENDS_RELOAD_DELAY)
+        },
+      )
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn(`[festplan] realtime ${channelName}:`, err.message ?? err)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      clearTimeout(timer)
+      supabase.removeChannel(ch)
+    }
+  }, [userId, festivalKey])
+}
