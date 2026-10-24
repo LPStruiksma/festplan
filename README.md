@@ -7,7 +7,7 @@ Features:
 - Spotify login; your top artists are matched against festival lineups.
 - Per-day schedule with list and grid views (grid on desktop only) and clash resolution.
 - Artist ratings, iCal export and a Spotify playlist builder.
-- Friend groups through invite links (`/join/:slug`), synced in real time.
+- Friend groups through invite links (`/join/:slug`). Group members' ratings and clash resolutions update live on the schedule, and your friends list syncs across your own devices (see [Realtime](#realtime)).
 - Festival comparison (`/compare`) and festival recommendations.
 - Admin pages for editing festivals and ingesting timetables from Ticketmaster (`/admin/...`, shown only to the admin email).
 
@@ -20,7 +20,7 @@ Features:
 
 ## Setup
 
-You need Node 20.6 or later (CI uses Node 24) and npm.
+You need Node 20.19 or later on the 20.x line, or 22.12 or later (Vite 8 requires `^20.19.0 || >=22.12.0`), and npm. CI uses Node 24.
 
 ```sh
 npm ci
@@ -54,11 +54,20 @@ Never commit `.env`, `.env.local` or any key.
 | `npm run dev` | start the Vite dev server |
 | `npm test` | run the test suite once (`vitest run`) |
 | `npm run test:watch` | run the tests in watch mode |
-| `npm run build` | build the production bundle into `dist/` |
+| `npm run build` | build the production bundle into `dist/`, then fail if any JavaScript chunk is over 500 kB (`scripts/check-bundle-size.mjs`) |
 | `npm run preview` | serve the built bundle locally |
-| `npm run lint` | run ESLint (currently reports known pre-existing findings and exits non-zero) |
+| `npm run lint` | run ESLint |
 
-The check that runs on every pull request (`tenant-baseline`, in `.github/workflows/autodev-tenant2-shadow.yml`) is `npm ci --ignore-scripts`, then `npm test && npm run build`.
+The check that runs on every pull request (`tenant-baseline`, in `.github/workflows/autodev-tenant2-shadow.yml`) is `npm ci --ignore-scripts`, then `npm test && npm run build`. It also runs `npm run lint` without failing on it, and validates the AutoDev declaration in `.autodev/project.json`.
+
+## Realtime
+
+Live updates use Supabase Realtime `postgres_changes` subscriptions in `src/lib/realtime.js`, used by the schedule page:
+
+- `useGroupSync` listens to `artist_ratings` and `schedule_resolutions` for you and each group member who joined through an invite link (one channel per user, filtered to the current festival). Friends you added by hand are not real users and are not subscribed to.
+- `useFriendsSync` listens to your own `friends` rows and reloads the list when they change on another device.
+
+A table only sends these events when it is in the Supabase project's `supabase_realtime` publication. No migration in `supabase/migrations/` adds any table to it, so that is set up in the Supabase project itself. Without it the subscriptions stay silent and changes show up the next time the page loads.
 
 ## Festival data
 
