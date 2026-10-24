@@ -10,8 +10,8 @@
     ]
   },
   "authority": {
-    "autonomyMode": "observe",
-    "automationBranchPrefix": "autodev/",
+    "autonomyMode": "auto-merge-low-risk",
+    "automationBranchPrefix": "claude/",
     "protectedBranches": [
       "main"
     ],
@@ -19,12 +19,15 @@
       "production-credentials",
       "production-deployment",
       "production-data-destructive-migration",
+      "production-database-apply",
       "oauth-provider-console-configuration",
-      "external-service-spend"
+      "external-service-spend",
+      "user-personal-data"
     ],
     "forbiddenPaths": [
       ".env",
       ".env.local",
+      ".env.*",
       "supabase/.temp",
       ".vercel"
     ]
@@ -49,11 +52,12 @@
     "maxRecentCommits": 24
   },
   "commands": {
-    "check": "npm test && npm run build"
+    "check": "npm ci --ignore-scripts && npm test && npm run build",
+    "lint": "npm run lint"
   },
   "review": {
-    "enabled": false,
-    "maxCorrectionLoops": 0,
+    "enabled": true,
+    "maxCorrectionLoops": 2,
     "configPath": null,
     "captureCommand": null
   },
@@ -67,11 +71,18 @@
     "requireChecks": true,
     "requireIndependentReview": true,
     "allowDirectProtectedBranchWrite": false,
-    "autoMergeCategories": [],
+    "autoMergeCategories": [
+      "routine"
+    ],
     "humanMergePaths": [
-      ".github/workflows/**",
-      ".autodev/project.json",
-      ".autodev/autodev.lock.json"
+      ".github/**",
+      ".autodev/**",
+      "vercel.json",
+      "supabase/migrations/**",
+      "AGENTS.md",
+      "CLAUDE.md",
+      ".claude/**",
+      ".mcp.json"
     ],
     "authoritySensitivePaths": []
   }

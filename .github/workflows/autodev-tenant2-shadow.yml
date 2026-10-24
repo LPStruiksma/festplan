@@ -39,20 +39,23 @@ jobs:
         continue-on-error: true
         run: npm run lint
 
-      - name: Validate observe-only AutoDev declaration
+      - name: Validate AutoDev declaration
         shell: bash
         run: |
           node --input-type=module <<'NODE'
-          import { readFile } from 'node:fs/promises'
+          import { readFile, access } from 'node:fs/promises'
           const manifest = JSON.parse(await readFile('.autodev/project.json', 'utf8'))
-          const lock = JSON.parse(await readFile('.autodev/autodev.lock.json', 'utf8'))
           if (manifest.project?.id !== 'festplan') throw new Error('Unexpected tenant project id')
           if (manifest.project?.repository !== 'LPStruiksma/festplan') throw new Error('Unexpected tenant repository')
-          if (manifest.authority?.autonomyMode !== 'observe') throw new Error('Initial Tenant #2 declaration must remain observe-only')
-          if (lock.mode !== 'shadow' || lock.authorityEffect !== 'NONE') throw new Error('Tenant lock must remain shadow / authority NONE')
-          if (lock.distribution?.commitSha !== '7c7988aa33b0186000ea883264720651320f73ce') throw new Error('Unexpected AutoDev distribution pin')
-          if (JSON.stringify(lock.capabilities) !== JSON.stringify(['project-intake','task-selection','project-development-lead'])) throw new Error('Unexpected capability set')
-          if (lock.distribution?.version !== '0.1.0-shadow.6') throw new Error('Unexpected AutoDev distribution version')
-          if (lock.rollback?.previousCommitSha !== '95895991bdcd28b0aa7a51de9f1927579838c824' || lock.rollback?.tested !== true) throw new Error('Expected proven rollback target is missing')
-          console.log('FestPlan tenant declaration is exact, observe-only, authority-neutral, and ready for the approved read-only project lead canary.')
+          if (manifest.authority?.autonomyMode !== 'auto-merge-low-risk') throw new Error('Tenant declaration must be auto-merge-low-risk')
+          if (JSON.stringify(manifest.promotion?.autoMergeCategories) !== JSON.stringify(['routine'])) throw new Error('Only the routine auto-merge category is allowed')
+          if (manifest.promotion?.requireChecks !== true || manifest.promotion?.requireIndependentReview !== true) throw new Error('Merges must require checks and independent review')
+          if (manifest.promotion?.allowDirectProtectedBranchWrite !== false) throw new Error('Direct protected-branch writes are not allowed')
+          const humanMerge = manifest.promotion?.humanMergePaths ?? []
+          for (const path of ['.github/**', '.autodev/**', 'vercel.json', 'supabase/migrations/**']) {
+            if (!humanMerge.includes(path)) throw new Error('Human-merge path missing: ' + path)
+          }
+          const lockPresent = await access('.autodev/autodev.lock.json').then(() => true, () => false)
+          if (lockPresent) throw new Error('The retired shadow lock must stay deleted')
+          console.log('FestPlan tenant declaration is auto-merge-low-risk with workflows, .autodev, vercel.json and migrations human-merge.')
           NODE
