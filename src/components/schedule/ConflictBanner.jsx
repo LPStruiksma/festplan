@@ -7,10 +7,10 @@ import { T } from '../../lib/ui'
  * Props:
  *   conflicts  — array of { key, a, b } (unresolved only — parent filters)
  *   fest       — festival object (needs .days for the day label)
- *   fa         — festival accent colour
+ *   fa         — festival accent colour (accepted, currently unused)
  *   onResolve  — (conflictKey, chosenArtist) => void
  */
-export default function ConflictBanner({ conflicts, fest, fa, onResolve }) {
+export default function ConflictBanner({ conflicts, fest, onResolve }) {
   if (!conflicts.length) return null
 
   return (
