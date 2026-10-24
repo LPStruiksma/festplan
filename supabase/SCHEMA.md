@@ -349,3 +349,18 @@ auth.users INSERT  →  trg_on_auth_user_created  →  handle_new_user()
 All queries issued by the frontend filter by `user_id` (enforced by RLS
 anyway) and `festival_key`, so a composite index on both is sufficient for
 all access patterns.
+
+### Festival backend tables
+
+`timetable_slots` (migration `0002_festival_tables.sql`) gets a unique key in
+`0009_timetable_slots_unique.sql`:
+
+| Constraint name                            | Table             | Columns                              |
+|--------------------------------------------|-------------------|--------------------------------------|
+| `timetable_slots_festival_artist_day_uniq` | `timetable_slots` | `(festival_key, artist, day_index)`  |
+
+The `ingest-festival-timetable` edge function upserts slots with
+`onConflict: 'festival_key,artist,day_index'`, which Postgres rejects without
+this key. The migration skips itself when an equivalent unique key already
+exists (for example the manual SQL-editor step in `DEVELOPMENT_REPORT.md`), and
+stops without changes when duplicate rows exist, so nothing is deleted.
