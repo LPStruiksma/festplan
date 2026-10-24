@@ -8,7 +8,7 @@ import {
   loadFriends, saveFriends, loadFriendsFromCache,
 } from '../lib/schedule-store'
 import { createInvite } from '../lib/invites'
-import { useGroupSync } from '../lib/realtime'
+import { useGroupSync, useFriendsSync } from '../lib/realtime'
 import { T } from '../lib/ui'
 import { getValidSpotifyToken } from '../lib/spotify-auth'
 import { getSlotDate } from '../lib/dates'
@@ -121,6 +121,14 @@ export default function SchedulePage({ session }) {
   const ratingTimers     = useRef({})
   const friendsTimer     = useRef(null)
 
+  // Friends edits made on another device: reload the list, but never while a
+  // local friends save is still waiting in its debounce window.
+  useFriendsSync(userId, festId, {
+    load: loadFriends,
+    onFriends: setFriends,
+    isLocalSavePending: () => friendsTimer.current !== null,
+  })
+
   // ── Mount: persist festival choice; pull authoritative state from Supabase ─
   useEffect(() => {
     if (!userId || !festId) return
@@ -163,9 +171,10 @@ export default function SchedulePage({ session }) {
   const scheduleFriendsSave = (nextFriends) => {
     localStorage.setItem(`festplan_friends_${festId}`, JSON.stringify(nextFriends))
     clearTimeout(friendsTimer.current)
-    friendsTimer.current = setTimeout(
-      () => saveFriends(userId, festId, nextFriends), 500
-    )
+    friendsTimer.current = setTimeout(() => {
+      friendsTimer.current = null
+      saveFriends(userId, festId, nextFriends)
+    }, 500)
   }
 
   const handleAddFriend = (name, artists) => {
