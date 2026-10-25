@@ -31,6 +31,14 @@ export default function AdminFestivals({ session }) {
     )
   }
 
+  return <AdminFestivalsContent />
+}
+
+// Hooks live here, below the auth gate component, so the hook count never
+// changes when the session arrives after mount.
+function AdminFestivalsContent() {
+  const navigate = useNavigate()
+
   const [festivals, setFestivals] = useState(null)   // null = loading
   const [error, setError]         = useState(null)
 

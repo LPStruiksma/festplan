@@ -9,8 +9,11 @@
 //
 //  2. withSync() runs fn up to 3 times with exponential back-off.
 //     On success it transitions the state machine: syncing → idle.
+//     On success it also drops any queued write to the same row, so an
+//     older failed value can't be replayed over the newer one.
 //     On final failure it:
-//       • pushes the payload to festplan_pending_writes[] in localStorage
+//       • pushes the payload to festplan_pending_writes[] in localStorage,
+//         replacing any older queued write to the same row
 //       • transitions the state machine: syncing → error
 //
 //  3. SyncProvider makes the current status available to any component
@@ -35,8 +38,41 @@ function loadPending() {
   try { return JSON.parse(localStorage.getItem(LS_PENDING_KEY) || '[]') } catch { return [] }
 }
 
+function savePending(list) {
+  localStorage.setItem(LS_PENDING_KEY, JSON.stringify(list))
+}
+
+// Which server row a payload writes.  Two payloads with the same identity
+// overwrite each other, so only the newest one is worth replaying.  Derived
+// from type + args so entries already queued by older builds still match.
+// Returns null for unknown types, which are never merged.
+function writeIdentity(payload) {
+  const [userId, a, b] = payload?.args || []
+  switch (payload?.type) {
+    case 'rating':     return JSON.stringify(['rating', userId, a, b])      // user, fest, artist
+    case 'resolution': return JSON.stringify(['resolution', userId, a, b])  // user, fest, conflictKey
+    case 'friends':    return JSON.stringify(['friends', userId, a])        // user, fest
+    case 'artists':    return JSON.stringify(['artists', userId])           // user
+    default:           return null
+  }
+}
+
+function withoutIdentity(list, id) {
+  return id === null ? list : list.filter(p => writeIdentity(p) !== id)
+}
+
+/** Queue a failed write, replacing any older queued write to the same row. */
 export function pushPendingWrite(payload) {
-  localStorage.setItem(LS_PENDING_KEY, JSON.stringify([...loadPending(), payload]))
+  savePending([...withoutIdentity(loadPending(), writeIdentity(payload)), payload])
+}
+
+// A write to the same row succeeded, so any queued older value is stale.
+function dropPendingWrite(payload) {
+  const id = writeIdentity(payload)
+  if (id === null) return
+  const pending = loadPending()
+  const kept = withoutIdentity(pending, id)
+  if (kept.length !== pending.length) savePending(kept)
 }
 
 export function getPendingWrites()   { return loadPending() }
@@ -109,6 +145,7 @@ export async function withSync(fn, payload) {
     try {
       await fn()
       // Success path
+      dropPendingWrite(payload)
       _inflight = Math.max(0, _inflight - 1)
       if (_inflight === 0 && _status === 'syncing') { _status = 'idle'; _notify() }
       return
@@ -134,8 +171,14 @@ export async function withSync(fn, payload) {
  * Safe to call when the queue is empty — exits immediately.
  */
 export async function drainPendingWrites() {
-  const pending = getPendingWrites()
-  if (!pending.length) return
+  const queued = getPendingWrites()
+  if (!queued.length) return
+
+  // Older builds appended duplicates; replay only the newest write per row.
+  const pending = queued.filter((p, i) => {
+    const id = writeIdentity(p)
+    return id === null || !queued.slice(i + 1).some(q => writeIdentity(q) === id)
+  })
 
   clearPendingWrites()  // remove before retry so partial success doesn't re-queue old items
   resetSyncError()

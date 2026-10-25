@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { fetchTimetable } from '../lib/api'
 import { norm } from '../lib/festivals'
@@ -159,7 +159,7 @@ function MatchBarChart({ festivals }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function ComparePage({ session }) {
+export default function ComparePage() {
   const [searchParams] = useSearchParams()
   const navigate       = useNavigate()
 
@@ -201,7 +201,12 @@ export default function ComparePage({ session }) {
         const enriched = ids.map((id, i) => {
           const r = results[i]
           if (r.status === 'fulfilled' && r.value?.festival) {
-            return enrichFestival(r.value.festival)
+            // Malformed data for one festival must not stall the whole page.
+            try {
+              return enrichFestival(r.value.festival)
+            } catch (e) {
+              return errorEntry(id, e?.message)
+            }
           }
           const msg = r.status === 'rejected'
             ? (r.reason?.message || 'Unknown error')
@@ -216,7 +221,7 @@ export default function ComparePage({ session }) {
         }
         setLoading(false)
       })
-  }, [])   // eslint-disable-line react-hooks/exhaustive-deps — ids are from URL, stable on mount
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps -- ids are from URL, stable on mount
 
   /** Re-fetch a single failed column without touching the others. */
   async function retryFestival(id) {
@@ -278,9 +283,6 @@ export default function ComparePage({ session }) {
       </div>
     )
   }
-
-  const colW      = `${Math.floor(100 / (festivals.length + 1))}%`
-  const artistColW = colW  // same width as data columns for symmetry
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--fp-bg)', color: 'var(--fp-text)' }}>

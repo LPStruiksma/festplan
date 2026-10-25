@@ -105,7 +105,7 @@ Lets Lukas share a link so a friend can join the same festival group.
 
 ### Phase 6 — Realtime Group Sync (Task 8)
 
-**`supabase/migrations/0004_group_sync.sql`** — enables Supabase Realtime publication on `artist_ratings` and `schedule_resolutions`.
+**`supabase/migrations/0004_group_sync.sql`** — adds `group_invites.accepted_by`, `friends.source_user_id` and RLS SELECT policies so group partners can read each other's `artist_ratings` and `schedule_resolutions`. It does not add any table to the Supabase Realtime publication; no migration in `supabase/migrations/` does, so that is set up in the Supabase project itself.
 
 **`src/lib/realtime.js`** — `useGroupSync(groupUserIds, festivalKey, onUpdate)` hook. Subscribes to `postgres_changes` on both tables filtered to the given user IDs and festival key. Calls `onUpdate` with a normalized payload so the caller can merge the incoming state.
 
@@ -318,7 +318,7 @@ supabase/
     0001_user_state.sql          profiles, user_artists, user_schedules, resolutions, ratings, friends
     0002_festival_tables.sql     festival_meta, timetable_slots, artist_events_cache
     0003_group_invites.sql       group_invites
-    0004_group_sync.sql          realtime publication on ratings + resolutions
+    0004_group_sync.sql          group partner columns + RLS on ratings + resolutions
   functions/
     discover-festivals/index.ts  Ticketmaster-backed discovery edge function
     _shared/cors.ts
@@ -462,9 +462,9 @@ Icon generation caveat: the favicon SVG uses `color(display-p3 ...)` which Image
      UNIQUE (festival_key, artist, day_index);
    ```
 
-5. **Verify `.env.local`** contains `VITE_ADMIN_EMAIL=lukas.struiksma@cbre.com`.
+5. **Verify `.env.local`** contains `VITE_ADMIN_EMAIL=you@example.com`.
 
-6. **Verify Supabase secrets** contain both `ADMIN_EMAIL=lukas.struiksma@cbre.com` and `TICKETMASTER_API_KEY=...`.
+6. **Verify Supabase secrets** contain both `ADMIN_EMAIL=you@example.com` and `TICKETMASTER_API_KEY=...`.
 
 ### Post-session fix — vite-plugin-pwa version
 
@@ -972,5 +972,5 @@ The "You might also like" feature matches related artists against `timetable_slo
 - **P1:** iCal `start_date` fix — trivial change, removes a known regression path.
 - **P2:** ComparePage error handling + back-navigation.
 - **P2:** PWA reload prompt.
-- **P3:** GroupTab realtime — friend additions/removals don't propagate in real time to other devices in the same group session. The Supabase Realtime subscription in `realtime.js` covers `user_schedules` and `artist_ratings` but not `friends`.
+- **P3 (done in festplan#6):** GroupTab realtime — friend additions/removals now propagate to your other devices: `useFriendsSync` in `src/lib/realtime.js` subscribes to your own `friends` rows, next to `useGroupSync` on `artist_ratings` and `schedule_resolutions`. Like those tables, `friends` only sends events once it is in the Supabase project's `supabase_realtime` publication.
 - **P3:** Recommendation cold-start — if the user's Spotify token is expired when `runRecommendations` fires, the function logs a warning and returns `[]` silently. It would be better to retry once after `getValidSpotifyToken` refreshes the token automatically.

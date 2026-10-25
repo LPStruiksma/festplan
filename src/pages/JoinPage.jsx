@@ -44,21 +44,16 @@ export default function JoinPage({ session }) {
   const navigate   = useNavigate()
 
   // 'loading' | 'redirecting' | 'joining' | 'done' | 'error'
-  const [status,   setStatus]   = useState('loading')
-  const [errorMsg, setErrorMsg] = useState('')
+  const [status,   setStatus]   = useState(slug ? 'loading' : 'error')
+  const [errorMsg, setErrorMsg] = useState(slug ? '' : 'No invite slug found in the URL.')
 
   useEffect(() => {
-    if (!slug) {
-      setStatus('error')
-      setErrorMsg('No invite slug found in the URL.')
-      return
-    }
+    if (!slug) return
 
     // ── ① Not logged in ─────────────────────────────────────────────────────
     if (!session) {
       // Persist the slug so AuthCallback can redirect back here after OAuth.
       localStorage.setItem('festplan_pending_invite', slug)
-      setStatus('redirecting')
 
       supabase.auth.signInWithOAuth({
         provider: 'spotify',
@@ -116,6 +111,9 @@ export default function JoinPage({ session }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Signed out with a slug: the effect has started the OAuth redirect.
+  const view = slug && !session ? 'redirecting' : status
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -133,7 +131,7 @@ export default function JoinPage({ session }) {
       }}>
 
         {/* Checking / loading */}
-        {status === 'loading' && (
+        {view === 'loading' && (
           <>
             <Spinner />
             <div style={{
@@ -148,7 +146,7 @@ export default function JoinPage({ session }) {
         )}
 
         {/* Redirecting to Spotify OAuth */}
-        {status === 'redirecting' && (
+        {view === 'redirecting' && (
           <>
             <Spinner />
             <div style={{
@@ -171,7 +169,7 @@ export default function JoinPage({ session }) {
         )}
 
         {/* Processing the invite */}
-        {status === 'joining' && (
+        {view === 'joining' && (
           <>
             <Spinner />
             <div style={{
@@ -186,7 +184,7 @@ export default function JoinPage({ session }) {
         )}
 
         {/* Success */}
-        {status === 'done' && (
+        {view === 'done' && (
           <>
             <div style={{ fontSize: 44, marginBottom: 16, animation: 'fp-scaleIn 0.4s ease both' }}>🎪</div>
             <div style={{
@@ -209,7 +207,7 @@ export default function JoinPage({ session }) {
         )}
 
         {/* Error */}
-        {status === 'error' && (
+        {view === 'error' && (
           <>
             <div style={{ fontSize: 36, marginBottom: 16, opacity: 0.55 }}>⚠️</div>
             <div style={{

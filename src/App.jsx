@@ -1,18 +1,21 @@
 import AuthCallback from './pages/AuthCallback'
-import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState, useRef } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
 import { SyncProvider, drainPendingWrites } from './lib/sync-state'
 import { usePwaInstallPrompt, usePwaUpdate } from './lib/pwa-install'
+import RouteErrorBoundary from './components/RouteErrorBoundary'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
 import SchedulePage from './pages/SchedulePage'
 import JoinPage from './pages/JoinPage'
-import AdminIngest from './pages/AdminIngest'
-import ComparePage from './pages/ComparePage'
-import AdminFestivals from './pages/AdminFestivals'
-import AdminFestivalEdit from './pages/AdminFestivalEdit'
+
+// Rarely visited routes load on demand, so they stay out of the main chunk.
+const ComparePage       = lazy(() => import('./pages/ComparePage'))
+const AdminIngest       = lazy(() => import('./pages/AdminIngest'))
+const AdminFestivals    = lazy(() => import('./pages/AdminFestivals'))
+const AdminFestivalEdit = lazy(() => import('./pages/AdminFestivalEdit'))
 
 // ── PWA install banner ────────────────────────────────────────────────────────
 
@@ -24,6 +27,11 @@ const DISMISS_MS         = 30 * 24 * 60 * 60 * 1000   // 30 days
 const UPDATE_DISMISS_KEY = 'festplan_update_dismiss_until'
 const UPDATE_DISMISS_MS  = 24 * 60 * 60 * 1000        // 24 hours
 
+/** True while a dismissal stored under `key` has not expired yet. */
+function isSnoozed(key) {
+  return Date.now() < parseInt(localStorage.getItem(key) || '0', 10)
+}
+
 /**
  * Fixed top-centre toast shown when a new service worker has installed and
  * the page's JS bundle is stale.  Dismissable; reappears after 24 h if the
@@ -31,19 +39,13 @@ const UPDATE_DISMISS_MS  = 24 * 60 * 60 * 1000        // 24 hours
  */
 function UpdateToast() {
   const { needRefresh, reload } = usePwaUpdate()
-  const [visible, setVisible]  = useState(false)
+  const [snoozed, setSnoozed]  = useState(() => isSnoozed(UPDATE_DISMISS_KEY))
 
-  useEffect(() => {
-    if (!needRefresh) return
-    const until = parseInt(localStorage.getItem(UPDATE_DISMISS_KEY) || '0', 10)
-    if (Date.now() >= until) setVisible(true)
-  }, [needRefresh])
-
-  if (!visible) return null
+  if (!needRefresh || snoozed) return null
 
   function dismiss() {
     localStorage.setItem(UPDATE_DISMISS_KEY, String(Date.now() + UPDATE_DISMISS_MS))
-    setVisible(false)
+    setSnoozed(true)
   }
 
   return (
@@ -108,25 +110,18 @@ function UpdateToast() {
 
 function InstallBanner() {
   const { canInstall, promptInstall, isInstalled } = usePwaInstallPrompt()
-  const [visible, setVisible] = useState(false)
+  const [snoozed, setSnoozed] = useState(() => isSnoozed(DISMISS_KEY))
 
-  useEffect(() => {
-    if (!canInstall || isInstalled) return
-    const until = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10)
-    if (Date.now() < until) return
-    setVisible(true)
-  }, [canInstall, isInstalled])
-
-  if (!visible) return null
+  if (!canInstall || isInstalled || snoozed) return null
 
   function dismiss() {
     localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_MS))
-    setVisible(false)
+    setSnoozed(true)
   }
 
   async function install() {
     const result = await promptInstall()
-    if (result?.outcome === 'accepted') setVisible(false)
+    if (result?.outcome === 'accepted') setSnoozed(true)
     else dismiss()
   }
 
@@ -191,8 +186,42 @@ function InstallBanner() {
   )
 }
 
+/** Full-screen spinner shown while the session or a lazy route loads. */
+function LoadingScreen() {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      gap: 16,
+    }}>
+      <div style={{
+        width: 20,
+        height: 20,
+        border: '2px solid var(--fp-accent, #c8f400)',
+        borderTopColor: 'transparent',
+        borderRadius: '50%',
+        animation: 'fp-spin 0.8s linear infinite',
+      }} />
+      <div style={{
+        fontFamily: "var(--fp-font-body, 'Outfit', sans-serif)",
+        color: 'var(--fp-text-mute, #555)',
+        fontSize: 11,
+        letterSpacing: 4,
+        textTransform: 'uppercase',
+        fontWeight: 600,
+      }}>
+        Loading
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined)
+  const { pathname } = useLocation()
   const drainedRef = useRef(false)
 
   useEffect(() => {
@@ -223,76 +252,50 @@ export default function App() {
     }
   }, [session])
 
-  if (session === undefined) {
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        gap: 16,
-      }}>
-        <div style={{
-          width: 20,
-          height: 20,
-          border: '2px solid var(--fp-accent, #c8f400)',
-          borderTopColor: 'transparent',
-          borderRadius: '50%',
-          animation: 'fp-spin 0.8s linear infinite',
-        }} />
-        <div style={{
-          fontFamily: "var(--fp-font-body, 'Outfit', sans-serif)",
-          color: 'var(--fp-text-mute, #555)',
-          fontSize: 11,
-          letterSpacing: 4,
-          textTransform: 'uppercase',
-          fontWeight: 600,
-        }}>
-          Loading
-        </div>
-      </div>
-    )
-  }
+  if (session === undefined) return <LoadingScreen />
 
   return (
     <SyncProvider>
       <InstallBanner />
       <UpdateToast />
-      <Routes>
-        <Route
-          path="/"
-          element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
-        />
-        <Route
-          path="/setup"
-          element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/schedule"
-          element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/compare"
-          element={session ? <ComparePage session={session} /> : <Navigate to="/" replace />}
-        />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        {/* /join/:slug works whether logged in or not — JoinPage handles both */}
-        <Route path="/join/:slug" element={<JoinPage session={session} />} />
-        <Route
-          path="/admin/ingest"
-          element={<AdminIngest session={session} />}
-        />
-        <Route
-          path="/admin/festivals"
-          element={<AdminFestivals session={session} />}
-        />
-        <Route
-          path="/admin/festivals/:id"
-          element={<AdminFestivalEdit session={session} />}
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <RouteErrorBoundary resetKey={pathname}>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route
+              path="/"
+              element={session ? <Navigate to="/setup" replace /> : <LoginPage />}
+            />
+            <Route
+              path="/setup"
+              element={session ? <SetupPage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/schedule"
+              element={session ? <SchedulePage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/compare"
+              element={session ? <ComparePage session={session} /> : <Navigate to="/" replace />}
+            />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            {/* /join/:slug works whether logged in or not — JoinPage handles both */}
+            <Route path="/join/:slug" element={<JoinPage session={session} />} />
+            <Route
+              path="/admin/ingest"
+              element={<AdminIngest session={session} />}
+            />
+            <Route
+              path="/admin/festivals"
+              element={<AdminFestivals session={session} />}
+            />
+            <Route
+              path="/admin/festivals/:id"
+              element={<AdminFestivalEdit session={session} />}
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </RouteErrorBoundary>
     </SyncProvider>
   )
 }
