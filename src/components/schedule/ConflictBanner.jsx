@@ -9,13 +9,16 @@ import { T } from '../../lib/ui'
  *   fest       — festival object (needs .days for the day label)
  *   fa         — festival accent colour (accepted, currently unused)
  *   onResolve  — (conflictKey, chosenArtist) => void
+ *   droppedPicks     — array of { conflict, picked, other }: picks whose winner
+ *                      lost another clash, leaving the slot empty (optional)
+ *   onDismissDropped — (conflictKey) => void, hides that pick-again prompt
  */
-export default function ConflictBanner({ conflicts, fest, onResolve }) {
-  if (!conflicts.length) return null
+export default function ConflictBanner({ conflicts, fest, onResolve, droppedPicks = [], onDismissDropped }) {
+  if (!conflicts.length && !droppedPicks.length) return null
 
   return (
     <div className="fp-animate-in" style={{ marginBottom: 22 }}>
-      <div style={{
+      {conflicts.length > 0 && <div style={{
         fontFamily: T.body,
         fontSize: 9, fontWeight: 800, letterSpacing: 4,
         color: 'var(--fp-warn)', textTransform: 'uppercase', marginBottom: 12,
@@ -25,7 +28,7 @@ export default function ConflictBanner({ conflicts, fest, onResolve }) {
           <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/>
         </svg>
         {conflicts.length} Scheduling Conflict{conflicts.length > 1 ? 's' : ''}
-      </div>
+      </div>}
 
       {conflicts.map(c => (
         <div key={c.key} style={{
@@ -80,6 +83,34 @@ export default function ConflictBanner({ conflicts, fest, onResolve }) {
               </button>
             ))}
           </div>
+        </div>
+      ))}
+
+      {droppedPicks.map(({ conflict, picked, other }) => (
+        <div key={conflict.key} style={{
+          background: 'var(--fp-s2)',
+          border: '1px solid var(--fp-border)',
+          borderRadius: 'var(--fp-radius-lg)',
+          padding: '12px 16px',
+          marginBottom: 10,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          fontFamily: T.body,
+          animation: 'fp-scaleIn 0.3s ease both',
+        }}>
+          <div style={{ flex: '1 1 220px', fontSize: 13, color: 'var(--fp-text)', lineHeight: 1.5 }}>
+            <strong>Pick again?</strong>{' '}
+            {picked.artist} lost another clash, so {picked.start}–{picked.end} on{' '}
+            {fest.days[picked.day]} is empty.
+          </div>
+          <button onClick={() => onResolve(conflict.key, other.artist)} style={{
+            background: 'none', color: 'var(--fp-text)',
+            border: '1px solid var(--fp-border)', borderRadius: 'var(--fp-radius-md)',
+            padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.body,
+          }}>See {other.artist} instead</button>
+          <button onClick={() => onDismissDropped?.(conflict.key)} style={{
+            background: 'none', color: 'var(--fp-text-dim)', border: 'none',
+            padding: '8px 4px', fontSize: 12, cursor: 'pointer', fontFamily: T.body,
+          }}>Leave it</button>
         </div>
       ))}
     </div>

@@ -32,6 +32,17 @@ export const buildFinalSchedule = (matchedSlots, conflicts, resolved) =>
     resolved[c.key] && resolved[c.key] !== slot.artist
   ))
 
+// Resolved clash picks whose chosen artist was dropped by another clash, which
+// leaves that time slot empty. Returns [{ conflict, picked, other }] so the UI
+// can offer to see the other artist instead.
+export const findDroppedPicks = (finalSchedule, conflicts, resolved) =>
+  conflicts.flatMap(c => {
+    const chosen = resolved[c.key]
+    if (!chosen || finalSchedule.some(s => s.artist === chosen)) return []
+    const [picked, other] = c.a.artist === chosen ? [c.a, c.b] : [c.b, c.a]
+    return [{ conflict: c, picked, other }]
+  })
+
 // ── ACCENT COLORS ─────────────────────────────────────────────────────────────
 
 export const FEST_COLORS = {
