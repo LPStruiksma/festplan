@@ -4,7 +4,6 @@ import {
   withSync,
   pushPendingWrite,
   getPendingWrites,
-  clearPendingWrites,
   drainPendingWrites,
   registerWriteHandler,
   resetSyncError,
@@ -40,7 +39,7 @@ beforeEach(() => {
   server = {}
   ratingHandler.mockClear()
   registerWriteHandler('rating', ratingHandler)
-  clearPendingWrites()
+  localStorage.clear()
   resetSyncError()
 })
 
@@ -230,3 +229,102 @@ describe('overlapping writes to the same row', () => {
     expect(getPendingWrites().map(p => p.args[3])).toEqual([5])
   })
 })
+
+// A request that stays open until the test makes it fail.
+function failLater() {
+  let fail
+  const promise = new Promise((_, rej) => { fail = rej })
+  promise.catch(() => {})
+  return { promise, fail }
+}
+
+describe('older writes that fail after a newer success', () => {
+  it('does not replay an older value that failed after a newer one succeeded', async () => {
+    const slow = failLater()
+    const first = withSync(() => slow.promise, { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3] })
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit lands
+    slow.fail(new Error('net'))
+    await settle(first)                                       // older edit gives up
+
+    expect(getPendingWrites()).toEqual([])
+    await settle(drainPendingWrites())
+    expect(server['u1|lowlands|Clipse']).toBe(5)
+  })
+
+  it('does not re-queue a drained old value that fails after a newer edit succeeded', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))   // queued
+    offline = false
+
+    const slow = failLater()
+    registerWriteHandler('rating', () => slow.promise)
+    const drain = drainPendingWrites()                        // replay of 3 in flight
+    registerWriteHandler('rating', ratingHandler)
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit lands
+    slow.fail(new Error('net'))
+    await settle(drain)                                       // replay of 3 gives up
+
+    expect(getPendingWrites()).toEqual([])
+    await settle(drainPendingWrites())
+    expect(server['u1|lowlands|Clipse']).toBe(5)
+  })
+
+  it('still queues a failed write to another row', async () => {
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Dijon', 2))
+
+    expect(getPendingWrites().map(p => p.args[2])).toEqual(['Dijon'])
+  })
+})
+
+describe('sequence numbers and other rows', () => {
+  it('keeps rising across a module reload, and after the counter is lost', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))
+    const before = getPendingWrites()[0].seq
+
+    vi.resetModules()
+    const reloaded = await import('./sync-state')
+    await settle(reloaded.withSync(
+      () => ratingHandler('u1', 'lowlands', 'Dijon', 1),
+      { type: 'rating', args: ['u1', 'lowlands', 'Dijon', 1] }
+    ))
+    expect(reloaded.getPendingWrites().find(p => p.args[2] === 'Dijon').seq).toBeGreaterThan(before)
+
+    localStorage.removeItem('festplan_write_seq')
+    vi.resetModules()
+    const again = await import('./sync-state')
+    await settle(again.withSync(
+      () => ratingHandler('u1', 'lowlands', 'Clipse', 4),
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 4] }
+    ))
+    expect(again.getPendingWrites().find(p => p.args[2] === 'Clipse').args[3]).toBe(4)
+  })
+
+  it('leaves other rows and unknown types queued around one row\'s writes', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Dijon', 2))
+    pushPendingWrite({ type: 'other', args: [1] })
+    offline = false
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 4))
+
+    expect(getPendingWrites().map(p => p.type + (p.args[2] || '')))
+      .toEqual(['ratingDijon', 'other', 'ratingClipse'])
+  })
+
+  it('replays the last of duplicate old-format entries alongside other rows', async () => {
+    localStorage.setItem('festplan_pending_writes', JSON.stringify([
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 1] },
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 2] },
+      { type: 'rating', args: ['u1', 'lowlands', 'Dijon', 7] },
+    ]))
+    await settle(drainPendingWrites())
+
+    expect(server).toEqual({ 'u1|lowlands|Clipse': 2, 'u1|lowlands|Dijon': 7 })
+    expect(getPendingWrites()).toEqual([])
+  })
+})
+

@@ -14,10 +14,12 @@
 //     On success it also drops queued writes to the same row that are older
 //     than this call, so an older failed value can't be replayed over the
 //     newer one, and a newer queued value isn't lost to an older success.
+//     It also records the highest seq that succeeded for each row.
 //     On final failure it:
 //       • pushes the payload to festplan_pending_writes[] in localStorage,
 //         replacing any older queued write to the same row (but never a
-//         newer one)
+//         newer one), and skipping it entirely if a newer write to that row
+//         already succeeded
 //       • transitions the state machine: syncing → error
 //
 //  3. SyncProvider makes the current status available to any component
@@ -38,6 +40,8 @@ import { createElement, createContext, useContext, useEffect, useState, useCallb
 
 const LS_PENDING_KEY = 'festplan_pending_writes'
 const LS_SEQ_KEY     = 'festplan_write_seq'
+const LS_DONE_KEY    = 'festplan_write_done'   // { [row identity]: highest succeeded seq }
+const DONE_LIMIT     = 500                     // rows kept, newest seqs first
 
 function loadPending() {
   try { return JSON.parse(localStorage.getItem(LS_PENDING_KEY) || '[]') } catch { return [] }
@@ -80,22 +84,43 @@ function nextSeq() {
   return _lastSeq
 }
 
+function loadDone() {
+  try { return JSON.parse(localStorage.getItem(LS_DONE_KEY) || '{}') || {} } catch { return {} }
+}
+
+// Remember the newest write that reached the server for this row.  Only a
+// write still in flight can fail after it, so the oldest rows can be dropped.
+function markDone(id, seq) {
+  const done = loadDone()
+  if ((done[id] ?? -1) >= seq) return
+  done[id] = seq
+  const ids = Object.keys(done)
+  if (ids.length > DONE_LIMIT) {
+    ids.sort((x, y) => done[y] - done[x]).slice(DONE_LIMIT).forEach(k => delete done[k])
+  }
+  try { localStorage.setItem(LS_DONE_KEY, JSON.stringify(done)) } catch { /* storage unavailable */ }
+}
+
 /**
  * Queue a failed write, replacing any older queued write to the same row.
- * If a newer write to that row is already queued, this one is dropped.
+ * If a newer write to that row is already queued, or already succeeded,
+ * this one is dropped.
  */
 export function pushPendingWrite(payload) {
   const id = writeIdentity(payload)
   const pending = loadPending()
+  if (id !== null && seqOf(payload) <= (loadDone()[id] ?? -1)) return
   if (id !== null && pending.some(p => writeIdentity(p) === id && seqOf(p) > seqOf(payload))) return
   savePending([...(id === null ? pending : pending.filter(p => writeIdentity(p) !== id)), payload])
 }
 
 // A write to the same row succeeded, so queued values from before it are
-// stale.  Queued values from after it started are newer and stay.
+// stale, and so is any older write that fails later.  Queued values from
+// after it started are newer and stay.
 function dropPendingWrite(payload) {
   const id = writeIdentity(payload)
   if (id === null) return
+  markDone(id, seqOf(payload))
   const pending = loadPending()
   const kept = pending.filter(p => writeIdentity(p) !== id || seqOf(p) > seqOf(payload))
   if (kept.length !== pending.length) savePending(kept)
