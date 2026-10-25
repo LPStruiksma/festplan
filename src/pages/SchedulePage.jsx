@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps, buildFinalSchedule } from '../lib/festivals'
+import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps, buildFinalSchedule, findDroppedPicks } from '../lib/festivals'
 import { fetchTimetable } from '../lib/api'
 import {
   loadSchedule, saveResolution, saveRating, saveFestivalKey,
@@ -92,6 +92,8 @@ export default function SchedulePage({ session }) {
 
   // ── Persisted state — lazy-init from localStorage cache ───────────────────
   const [resolved, setResolved] = useState(() => loadResolvedFromCache(festId))
+  // Pick-again prompts the user chose to leave, keyed by conflict → the pick then.
+  const [dismissedDropped, setDismissedDropped] = useState({})
   const [friends,  setFriends]  = useState(() => loadFriendsFromCache(festId))
   const [ratings,  setRatings]  = useState(() => loadRatingsFromCache(festId))
 
@@ -352,6 +354,11 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
 
   const unresolvedConflicts = conflicts.filter(c => !resolved[c.key])
 
+  const droppedPicks = useMemo(() =>
+    findDroppedPicks(finalSchedule, conflicts, resolved)
+      .filter(d => dismissedDropped[d.conflict.key] !== resolved[d.conflict.key])
+  , [finalSchedule, conflicts, resolved, dismissedDropped])
+
   const allParticipants = useMemo(() => [
     { name: 'Me', artists: myArtists, color: fa },
     ...friends.map((f, i) => ({ ...f, color: FRIEND_COLORS[i % FRIEND_COLORS.length] }))
@@ -391,6 +398,8 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
           fest={fest}
           fa={fa}
           onResolve={handleResolve}
+          droppedPicks={droppedPicks}
+          onDismissDropped={key => setDismissedDropped(prev => ({ ...prev, [key]: resolved[key] }))}
         />
 
         {/* ── Tab bar ──────────────────────────────────────────────────── */}

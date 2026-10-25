@@ -172,4 +172,46 @@ describe('ConflictBanner', () => {
 
     expect(container.firstChild).toBeNull()
   })
+
+  // ── Dropped picks: "pick again?" ───────────────────────────────────────────
+  //
+  // A pick whose winner lost another clash leaves its slot empty. The parent
+  // passes those as droppedPicks: [{ conflict, picked, other }].
+
+  const DROPPED = { conflict: C1, picked: C1.a, other: C1.b }
+
+  test('shows a pick-again prompt for a dropped pick even with no open conflicts', () => {
+    render(<ConflictBanner conflicts={[]} droppedPicks={[DROPPED]} fest={FEST} onResolve={() => {}} onDismissDropped={() => {}} />)
+
+    expect(screen.getByText(/Pick again\?/)).toBeInTheDocument()
+    expect(screen.getByText(/Radiohead lost another clash/)).toBeInTheDocument()
+    expect(screen.queryByText(/Scheduling Conflict/)).not.toBeInTheDocument()
+  })
+
+  test('choosing the other artist re-resolves that clash', () => {
+    const onResolve = vi.fn()
+    render(<ConflictBanner conflicts={[]} droppedPicks={[DROPPED]} fest={FEST} onResolve={onResolve} onDismissDropped={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /See Bicep instead/ }))
+
+    expect(onResolve).toHaveBeenCalledWith(C1.key, 'Bicep')
+  })
+
+  test('"Leave it" dismisses the prompt without changing the pick', () => {
+    const onResolve = vi.fn()
+    const onDismissDropped = vi.fn()
+    render(<ConflictBanner conflicts={[]} droppedPicks={[DROPPED]} fest={FEST} onResolve={onResolve} onDismissDropped={onDismissDropped} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Leave it/ }))
+
+    expect(onDismissDropped).toHaveBeenCalledWith(C1.key)
+    expect(onResolve).not.toHaveBeenCalled()
+  })
+
+  test('open conflicts and dropped picks render together', () => {
+    render(<ConflictBanner conflicts={[C2]} droppedPicks={[DROPPED]} fest={FEST} onResolve={() => {}} onDismissDropped={() => {}} />)
+
+    expect(screen.getByText(/1 Scheduling Conflict/)).toBeInTheDocument()
+    expect(screen.getByText(/Pick again\?/)).toBeInTheDocument()
+  })
 })

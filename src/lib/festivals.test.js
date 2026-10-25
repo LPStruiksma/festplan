@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { norm, toMins, overlaps, buildFinalSchedule } from './festivals'
+import { norm, toMins, overlaps, buildFinalSchedule, findDroppedPicks } from './festivals'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // norm — case-insensitive artist name normalisation
@@ -208,5 +208,57 @@ describe('buildFinalSchedule', () => {
     }
     expect(buildFinalSchedule(slots, conflicts, resolved)).toContain(loner)
     expect(buildFinalSchedule([loner], [], {})).toEqual([loner])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// findDroppedPicks — clash picks whose winner was dropped by another clash
+// ─────────────────────────────────────────────────────────────────────────────
+describe('findDroppedPicks', () => {
+  const bigThief = { artist: 'Big Thief',         stage: 'Main Stage', day: 0, start: '21:30', end: '23:00' }
+  const fjm      = { artist: 'Father John Misty', stage: 'Patronaat',  day: 0, start: '21:30', end: '22:30' }
+  const ravyn    = { artist: 'Ravyn Lenae',       stage: 'Greenhouse', day: 0, start: '22:30', end: '00:00' }
+  const loner    = { artist: 'Clipse',            stage: 'Main Stage', day: 1, start: '20:00', end: '21:00' }
+  const slots = [bigThief, fjm, ravyn, loner]
+  const key = (a, b) => [a.artist, b.artist].sort().join('|||')
+  const btFjm   = { key: key(bigThief, fjm),   a: bigThief, b: fjm }
+  const btRavyn = { key: key(bigThief, ravyn), a: bigThief, b: ravyn }
+  const conflicts = [btFjm, btRavyn]
+  const dropped = resolved => findDroppedPicks(buildFinalSchedule(slots, conflicts, resolved), conflicts, resolved)
+
+  test('a pick that lost another clash is offered again with the other artist', () => {
+    const resolved = {
+      [btFjm.key]:   'Big Thief',
+      [btRavyn.key]: 'Ravyn Lenae',
+    }
+    expect(dropped(resolved)).toEqual([{ conflict: btFjm, picked: bigThief, other: fjm }])
+  })
+
+  test('nothing to offer when every pick made it into the schedule', () => {
+    expect(dropped({ [btFjm.key]: 'Big Thief', [btRavyn.key]: 'Big Thief' })).toEqual([])
+    expect(dropped({ [btFjm.key]: 'Father John Misty', [btRavyn.key]: 'Ravyn Lenae' })).toEqual([])
+  })
+
+  test('unresolved conflicts are never offered', () => {
+    expect(dropped({})).toEqual([])
+    expect(dropped({ [btRavyn.key]: 'Ravyn Lenae' })).toEqual([])
+  })
+
+  test('picking the other artist clears the prompt and fills the slot', () => {
+    const resolved = {
+      [btFjm.key]:   'Father John Misty',
+      [btRavyn.key]: 'Ravyn Lenae',
+    }
+    expect(dropped(resolved)).toEqual([])
+    expect(buildFinalSchedule(slots, conflicts, resolved).map(s => s.artist))
+      .toEqual(['Father John Misty', 'Ravyn Lenae', 'Clipse'])
+  })
+
+  test('works whichever side of the conflict the pick is on', () => {
+    const flipped = { key: btFjm.key, a: fjm, b: bigThief }
+    const cs = [flipped, btRavyn]
+    const resolved = { [btFjm.key]: 'Big Thief', [btRavyn.key]: 'Ravyn Lenae' }
+    expect(findDroppedPicks(buildFinalSchedule(slots, cs, resolved), cs, resolved))
+      .toEqual([{ conflict: flipped, picked: bigThief, other: fjm }])
   })
 })
