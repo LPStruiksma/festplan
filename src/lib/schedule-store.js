@@ -293,12 +293,14 @@ async function _rawSaveFriends(userId, festKey, friends) {
   const { error: insErr } = await supabase
     .from('friends')
     .insert(
-      friends.map(({ name, artists }, position) => ({
-        user_id:      userId,
-        festival_key: festKey,
+      friends.map(({ name, artists, source_user_id }, position) => ({
+        user_id:        userId,
+        festival_key:   festKey,
         name,
         artists,
         position,
+        // Keep the invite link so useGroupSync keeps syncing this friend
+        source_user_id: source_user_id ?? null,
       }))
     )
   if (insErr) throw new Error(insErr.message)
@@ -316,7 +318,7 @@ registerWriteHandler('friends', _rawSaveFriends)
  *
  * @param {string} userId
  * @param {string} festKey
- * @param {Array<{ name: string, artists: string[] }>} friends
+ * @param {Array<{ name: string, artists: string[], source_user_id?: string|null }>} friends
  */
 export function saveFriends(userId, festKey, friends) {
   if (!userId || !festKey) return Promise.resolve()
