@@ -54,10 +54,13 @@ export function formatFestivalDay(startDate, dayIndex) {
  * @param {number} dayIndex   0-based day index within the festival
  * @param {string} timeStr    "HH:MM" (24-hour, local time)
  * @returns {Date}
+ *
+ * Times before 06:00 belong to the night of `dayIndex`, so they land on the
+ * next calendar day (same convention as `toMins` in festivals.js).
  */
 export function getSlotDate(startDate, dayIndex, timeStr) {
-  const base = getDayDate(startDate, dayIndex)
   const [hh, mm] = timeStr.split(':').map(Number)
+  const base = getDayDate(startDate, hh < 6 ? dayIndex + 1 : dayIndex)
   base.setHours(hh, mm, 0, 0)
   return base
 }
