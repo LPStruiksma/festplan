@@ -1,7 +1,7 @@
 -- Migration 0011: limit invite reads to the friend who accepted the invite
 --
 -- 0003 opened two cross-user reads while any non-expired invite exists:
---   "profiles: readable via active invite"      (display name, avatar, Spotify id)
+--   "profiles: readable via active invite"      (whole rows, Spotify tokens included)
 --   "user_artists: readable via active invite"  (that festival's artist list)
 -- Neither checked who was reading, and "group_invites: public select" let
 -- anyone with the public anon key list every invite, slugs included. So any
@@ -17,8 +17,12 @@
 --     friend per link: it succeeds only while accepted_by is empty or already
 --     the caller. There was no UPDATE policy on group_invites, so the app's
 --     direct update of accepted_by never saved; this function replaces it;
---   • the inviter's profile and that festival's user_artists rows are
---     readable by the user who accepted, and by nobody else.
+--   • get_invite also returns the inviter's display name, so no other user
+--     needs to read profiles at all: profiles rows hold the Spotify access
+--     and refresh tokens (0005), and RLS can't hide columns. Profiles go
+--     back to owner-only;
+--   • that festival's user_artists rows are readable by the user who
+--     accepted, and by nobody else.
 --
 -- The app must call the two functions (src/lib/invites.js); deploy the app
 -- change together with this migration.
@@ -38,15 +42,19 @@ CREATE POLICY "group_invites: inviter or acceptor can read"
 
 -- ── get_invite(slug) ────────────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.get_invite(p_slug uuid)
-RETURNS TABLE (slug uuid, festival_key text, inviter_user_id uuid, expires_at timestamptz)
+DROP FUNCTION IF EXISTS public.get_invite(uuid);
+
+CREATE FUNCTION public.get_invite(p_slug uuid)
+RETURNS TABLE (slug uuid, festival_key text, inviter_user_id uuid, expires_at timestamptz,
+               inviter_name text)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT gi.slug, gi.festival_key, gi.inviter_user_id, gi.expires_at
+  SELECT gi.slug, gi.festival_key, gi.inviter_user_id, gi.expires_at, p.display_name
   FROM   public.group_invites gi
+  LEFT JOIN public.profiles p ON p.id = gi.inviter_user_id
   WHERE  auth.uid() IS NOT NULL
     AND  gi.slug       = p_slug
     AND  gi.expires_at > now()
@@ -56,7 +64,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.get_invite(uuid) IS
-  'Look up one non-expired invite by slug for the signed-in user; hides invites another user accepted.';
+  'Look up one non-expired invite by slug for the signed-in user, with the inviter''s display name only; hides invites another user accepted.';
 
 -- ── accept_invite(slug) ─────────────────────────────────────────────────────
 
@@ -85,21 +93,10 @@ REVOKE ALL ON FUNCTION public.accept_invite(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_invite(uuid)    TO authenticated;
 GRANT EXECUTE ON FUNCTION public.accept_invite(uuid) TO authenticated;
 
--- ── profiles: readable by the friend who accepted ───────────────────────────
+-- ── profiles: owner-only again (rows carry Spotify tokens) ──────────────────
 
 DROP POLICY IF EXISTS "profiles: readable via active invite"   ON public.profiles;
 DROP POLICY IF EXISTS "profiles: readable by invite acceptor"  ON public.profiles;
-
-CREATE POLICY "profiles: readable by invite acceptor"
-  ON public.profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM   public.group_invites gi
-      WHERE  gi.inviter_user_id = profiles.id
-        AND  gi.accepted_by     = auth.uid()
-    )
-  );
 
 -- ── user_artists: that festival's list, for the friend who accepted ─────────
 

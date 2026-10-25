@@ -104,6 +104,15 @@ describe('acceptInvite records the acceptance first', () => {
     expect(inserts.calls).toEqual(['rpc:accept_invite'])
   })
 
+  it('takes the inviter\'s name from the invite and never reads profiles', async () => {
+    const inserts = makeDb({ profiles: [{ id: 'a', display_name: 'From profiles' }], user_artists: [], friends: [] })
+
+    await acceptInvite({ ...invite('a'), inviter_name: ' Sam ' }, session)
+
+    expect(inserts.calls).not.toContain('from:profiles')
+    expect(inserts.filter(i => i.table === 'friends')[0].row).toMatchObject({ name: 'Sam' })
+  })
+
   it('no longer updates group_invites directly', async () => {
     const inserts = makeDb({ profiles: [], user_artists: [], friends: [] })
 

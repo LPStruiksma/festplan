@@ -10,12 +10,13 @@ import { supabase } from './supabase'
 //     Caller is responsible for copying the URL to the clipboard.
 //
 //   getInvite(slug) → invite object | null
-//     Looks up a non-expired invite by its slug (get_invite, migration 0011).
+//     Looks up a non-expired invite by its slug (get_invite, migration 0011),
+//     including the inviter's display name.
 //     Returns null if not found, expired, or accepted by someone else.
 //
 //   acceptInvite(invite, session) → festivalKey string | null
 //     Records the joiner as the invite's acceptor (accept_invite), then reads
-//     the inviter's display_name and artist list and inserts a friends row
+//     the inviter's artist list and inserts a friends row
 //     into *the joiner's* friends list so the inviter appears in the joiner's
 //     Group tab immediately.
 //     Returns the festival_key on success, null on error.
@@ -43,7 +44,7 @@ export async function createInvite(userId, festivalKey) {
  * Fetch a non-expired invite by its URL slug.
  *
  * @param {string} slug  UUID from the URL — /join/<slug>
- * @returns {Promise<{ slug: string, festival_key: string, inviter_user_id: string, expires_at: string } | null>}
+ * @returns {Promise<{ slug: string, festival_key: string, inviter_user_id: string, expires_at: string, inviter_name: string | null } | null>}
  */
 export async function getInvite(slug) {
   if (!slug) return null
@@ -65,15 +66,16 @@ export async function getInvite(slug) {
  * inviter's picks show up immediately in the Group tab.
  *
  * Steps:
- *   0. Record the joiner as the invite's acceptor (accept_invite). The reads
- *      below are only allowed for the user who accepted (migration 0011).
- *   1. Read the inviter's display_name from profiles.
+ *   0. Record the joiner as the invite's acceptor (accept_invite). The read
+ *      below is only allowed for the user who accepted (migration 0011).
+ *   1. Take the inviter's name from the invite (get_invite returns it;
+ *      other users' profiles rows are not readable).
  *   2. Read the inviter's artists for the festival from user_artists.
  *   3. Check for a duplicate friends row (same inviter via source_user_id) —
  *      skip if already linked. Names can collide ('Your friend', first names).
  *   4. Insert a friends row: user_id = joiner, name = inviter, artists = theirs.
  *
- * @param {{ festival_key: string, inviter_user_id: string }} invite
+ * @param {{ festival_key: string, inviter_user_id: string, inviter_name?: string | null }} invite
  * @param {{ user: { id: string } }} session  Supabase auth session of the joiner
  * @returns {Promise<string | null>}  festival_key on success, null on error
  */
@@ -92,13 +94,7 @@ export async function acceptInvite(invite, session) {
   }
 
   // ── 1. Inviter's display name ─────────────────────────────────────────────
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('id', inviterId)
-    .maybeSingle()
-
-  const inviterName = profile?.display_name?.trim() || 'Your friend'
+  const inviterName = invite.inviter_name?.trim() || 'Your friend'
 
   // ── 2. Inviter's artists for this festival ────────────────────────────────
   const { data: artistRows } = await supabase
