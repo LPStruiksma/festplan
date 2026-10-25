@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps } from '../lib/festivals'
+import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps, buildFinalSchedule } from '../lib/festivals'
 import { fetchTimetable } from '../lib/api'
 import {
   loadSchedule, saveResolution, saveRating, saveFestivalKey,
@@ -403,12 +403,7 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
   }, [isLineupOnly, matchedSlots])
 
   const finalSchedule = useMemo(() =>
-    matchedSlots.filter(slot => {
-      for (const c of conflicts)
-        if ((c.a.artist === slot.artist || c.b.artist === slot.artist) && resolved[c.key])
-          return resolved[c.key] === slot.artist
-      return true
-    })
+    buildFinalSchedule(matchedSlots, conflicts, resolved)
   , [matchedSlots, conflicts, resolved])
 
   const unresolvedConflicts = conflicts.filter(c => !resolved[c.key])
