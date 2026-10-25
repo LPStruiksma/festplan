@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { loadArtists, loadArtistsFromCache } from './profile'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // invites.js
@@ -6,7 +7,9 @@ import { supabase } from './supabase'
 // Three thin helpers for the invite-link flow:
 //
 //   createInvite(userId, festivalKey) → slug string
-//     Inserts a new group_invites row and returns its UUID slug.
+//     Copies the inviter's artist list into festival-scoped user_artists
+//     rows (the only rows invitees can read), then inserts a new
+//     group_invites row and returns its UUID slug.
 //     Caller is responsible for copying the URL to the clipboard.
 //
 //   getInvite(slug) → invite object | null
@@ -28,6 +31,8 @@ import { supabase } from './supabase'
  * @returns {Promise<string>}   The UUID slug to embed in the share URL
  */
 export async function createInvite(userId, festivalKey) {
+  await shareArtistsForFestival(userId, festivalKey)
+
   const { data, error } = await supabase
     .from('group_invites')
     .insert({ inviter_user_id: userId, festival_key: festivalKey })
@@ -36,6 +41,51 @@ export async function createInvite(userId, festivalKey) {
 
   if (error) throw new Error(`createInvite: ${error.message}`)
   return data.slug   // UUID string
+}
+
+/**
+ * Write the inviter's current artist list as user_artists rows scoped to
+ * `festivalKey`. The app keeps its own list under festival_key IS NULL, but
+ * the "user_artists: readable via active invite" policy (migration 0003) only
+ * exposes rows whose festival_key matches the invite, so without this copy
+ * every invitee would receive an empty list. Only this festival's rows are
+ * replaced; the global list is never touched.
+ *
+ * @param {string} userId
+ * @param {string} festivalKey
+ */
+async function shareArtistsForFestival(userId, festivalKey) {
+  const artists = (await loadArtists(userId)) ?? loadArtistsFromCache()
+
+  // Dedupe case-insensitively (UNIQUE on user_id, festival_key, lower(artist_name)).
+  const seen = new Set()
+  const unique = artists.filter(a => {
+    const key = a.toLowerCase().trim()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  const { error: delErr } = await supabase
+    .from('user_artists')
+    .delete()
+    .eq('user_id', userId)
+    .eq('festival_key', festivalKey)
+
+  if (delErr) throw new Error(`createInvite: ${delErr.message}`)
+  if (!unique.length) return
+
+  const { error: insErr } = await supabase
+    .from('user_artists')
+    .insert(
+      unique.map((artist_name, position) => ({
+        user_id:      userId,
+        festival_key: festivalKey,
+        artist_name,
+        position,
+      }))
+    )
+  if (insErr) throw new Error(`createInvite: ${insErr.message}`)
 }
 
 /**
