@@ -10,13 +10,14 @@ import { supabase } from './supabase'
 //     Caller is responsible for copying the URL to the clipboard.
 //
 //   getInvite(slug) → invite object | null
-//     Looks up a non-expired invite by its slug.
-//     Returns null if not found or expired.
+//     Looks up a non-expired invite by its slug (get_invite, migration 0011).
+//     Returns null if not found, expired, or accepted by someone else.
 //
 //   acceptInvite(invite, session) → festivalKey string | null
-//     Reads the inviter's display_name and artist list then inserts
-//     a friends row into *the joiner's* friends list so the inviter
-//     appears in the joiner's Group tab immediately.
+//     Records the joiner as the invite's acceptor (accept_invite), then reads
+//     the inviter's display_name and artist list and inserts a friends row
+//     into *the joiner's* friends list so the inviter appears in the joiner's
+//     Group tab immediately.
 //     Returns the festival_key on success, null on error.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -47,19 +48,16 @@ export async function createInvite(userId, festivalKey) {
 export async function getInvite(slug) {
   if (!slug) return null
 
-  const { data, error } = await supabase
-    .from('group_invites')
-    .select('slug, festival_key, inviter_user_id, expires_at')
-    .eq('slug', slug)
-    .gt('expires_at', new Date().toISOString())  // expired rows → no result
-    .maybeSingle()                               // null if missing; no throw
+  // group_invites can't be listed (migration 0011); get_invite returns the
+  // one row for this slug, or none if it is expired or someone else's.
+  const { data, error } = await supabase.rpc('get_invite', { p_slug: slug })
 
   if (error) {
     console.warn('[festplan] getInvite:', error.message)
     return null
   }
 
-  return data   // null if not found / expired
+  return data?.[0] ?? null   // null if not found / expired
 }
 
 /**
@@ -67,10 +65,10 @@ export async function getInvite(slug) {
  * inviter's picks show up immediately in the Group tab.
  *
  * Steps:
- *   1. Read the inviter's display_name from profiles (allowed by the
- *      "profiles: readable via active invite" RLS policy in migration 0003).
- *   2. Read the inviter's artists for the festival from user_artists (allowed
- *      by the "user_artists: readable via active invite" policy).
+ *   0. Record the joiner as the invite's acceptor (accept_invite). The reads
+ *      below are only allowed for the user who accepted (migration 0011).
+ *   1. Read the inviter's display_name from profiles.
+ *   2. Read the inviter's artists for the festival from user_artists.
  *   3. Check for a duplicate friends row (same inviter via source_user_id) —
  *      skip if already linked. Names can collide ('Your friend', first names).
  *   4. Insert a friends row: user_id = joiner, name = inviter, artists = theirs.
@@ -83,6 +81,15 @@ export async function acceptInvite(invite, session) {
   const joinerId   = session.user.id
   const festKey    = invite.festival_key
   const inviterId  = invite.inviter_user_id
+
+  // ── 0. Accept: also lets the inviter read the joiner's data (migration 0004)
+  const { data: acceptedKey, error: accErr } = await supabase
+    .rpc('accept_invite', { p_slug: invite.slug })
+
+  if (accErr || !acceptedKey) {
+    console.error('[festplan] acceptInvite:', accErr?.message ?? 'invite not accepted')
+    return null
+  }
 
   // ── 1. Inviter's display name ─────────────────────────────────────────────
   const { data: profile } = await supabase
@@ -143,15 +150,6 @@ export async function acceptInvite(invite, session) {
     console.error('[festplan] acceptInvite insert:', insErr.message)
     return null
   }
-
-  // ── 6. Mark the invite as accepted so the inviter can read the joiner's data
-  //       (enables the bidirectional RLS policies in migration 0004)
-  await supabase
-    .from('group_invites')
-    .update({ accepted_by: joinerId })
-    .eq('slug', invite.slug)
-    // Non-fatal: if this fails the friend entry still works; realtime sync
-    // for the inviter side will just be unavailable until the row is updated.
 
   return festKey
 }
