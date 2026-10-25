@@ -23,6 +23,15 @@ export const overlaps = (a, b) =>
   toMins(a.start) < toMins(b.end) &&
   toMins(b.start) < toMins(a.end)
 
+// Build the final schedule from the matched slots and the user's clash picks.
+// A slot stays unless some resolved conflict containing its artist chose the
+// other artist, so an artist who wins one clash but loses another is dropped.
+export const buildFinalSchedule = (matchedSlots, conflicts, resolved) =>
+  matchedSlots.filter(slot => !conflicts.some(c =>
+    (c.a.artist === slot.artist || c.b.artist === slot.artist) &&
+    resolved[c.key] && resolved[c.key] !== slot.artist
+  ))
+
 // ── ACCENT COLORS ─────────────────────────────────────────────────────────────
 
 export const FEST_COLORS = {
