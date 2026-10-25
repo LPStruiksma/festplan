@@ -7,7 +7,7 @@ Features:
 - Spotify login; your top artists are matched against festival lineups.
 - Per-day schedule with list and grid views (grid on desktop only) and clash resolution.
 - Artist ratings, iCal export and a Spotify playlist builder.
-- Friend groups through invite links (`/join/:slug`). Group members' ratings and clash resolutions update live on the schedule, and your friends list syncs across your own devices (see [Realtime](#realtime)).
+- Friend groups through invite links (`/join/:slug`). Each link can be accepted by one friend, so every friend gets their own link. Group members' ratings and clash resolutions update live on the schedule, and your friends list syncs across your own devices (see [Realtime](#realtime)).
 - Festival comparison (`/compare`) and festival recommendations.
 - Admin pages for editing festivals and ingesting timetables from Ticketmaster (`/admin/...`, shown only to the admin email).
 
@@ -58,7 +58,7 @@ Never commit `.env`, `.env.local` or any key.
 | `npm run preview` | serve the built bundle locally |
 | `npm run lint` | run ESLint |
 
-The check that runs on every pull request (`tenant-baseline`, in `.github/workflows/autodev-tenant2-shadow.yml`) is `npm ci --ignore-scripts`, then `npm test && npm run build`. It also runs `npm run lint` without failing on it, and validates the AutoDev declaration in `.autodev/project.json`.
+The check that runs on every pull request (`tenant-baseline`, in `.github/workflows/autodev-tenant2-shadow.yml`) is `npm ci --ignore-scripts`, then `npm test && npm run build`, then `npm run lint`; the check fails if any of these fails. It also validates the AutoDev declaration in `.autodev/project.json`.
 
 ## Realtime
 
