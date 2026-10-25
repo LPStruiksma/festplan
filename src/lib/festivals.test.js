@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { norm, toMins, overlaps } from './festivals'
+import { norm, toMins, overlaps, buildFinalSchedule } from './festivals'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // norm — case-insensitive artist name normalisation
@@ -152,5 +152,61 @@ describe('overlaps', () => {
 
   test('two null-time slots never overlap → false', () => {
     expect(overlaps(slot(0, null, null), slot(0, null, null))).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildFinalSchedule — resolved clash picks; seed data: Best Kept Secret 2026
+// ─────────────────────────────────────────────────────────────────────────────
+describe('buildFinalSchedule', () => {
+  const bigThief = { artist: 'Big Thief',         stage: 'Main Stage', day: 0, start: '21:30', end: '23:00' }
+  const fjm      = { artist: 'Father John Misty', stage: 'Patronaat',  day: 0, start: '21:30', end: '22:30' }
+  const ravyn    = { artist: 'Ravyn Lenae',       stage: 'Greenhouse', day: 0, start: '22:30', end: '00:00' }
+  const loner    = { artist: 'Clipse',            stage: 'Main Stage', day: 1, start: '20:00', end: '21:00' }
+  const slots = [bigThief, fjm, ravyn, loner]
+  const key = (a, b) => [a.artist, b.artist].sort().join('|||')
+  const conflicts = [
+    { key: key(bigThief, fjm),   a: bigThief, b: fjm },
+    { key: key(bigThief, ravyn), a: bigThief, b: ravyn },
+  ]
+  const artists = s => s.map(x => x.artist)
+
+  test('a pick that loses a second clash drops the slot, so no overlap remains', () => {
+    const resolved = {
+      [key(bigThief, fjm)]:   'Big Thief',
+      [key(bigThief, ravyn)]: 'Ravyn Lenae',
+    }
+    expect(artists(buildFinalSchedule(slots, conflicts, resolved))).toEqual(['Ravyn Lenae', 'Clipse'])
+  })
+
+  test('the same answer whatever order the conflicts come in', () => {
+    const resolved = {
+      [key(bigThief, fjm)]:   'Big Thief',
+      [key(bigThief, ravyn)]: 'Ravyn Lenae',
+    }
+    expect(artists(buildFinalSchedule(slots, [...conflicts].reverse(), resolved))).toEqual(['Ravyn Lenae', 'Clipse'])
+  })
+
+  test('picking one artist over both clashes keeps only that artist', () => {
+    const resolved = {
+      [key(bigThief, fjm)]:   'Big Thief',
+      [key(bigThief, ravyn)]: 'Big Thief',
+    }
+    expect(artists(buildFinalSchedule(slots, conflicts, resolved))).toEqual(['Big Thief', 'Clipse'])
+  })
+
+  test('unresolved conflicts keep both sides', () => {
+    expect(artists(buildFinalSchedule(slots, conflicts, {}))).toEqual(artists(slots))
+    const oneResolved = { [key(bigThief, fjm)]: 'Father John Misty' }
+    expect(artists(buildFinalSchedule(slots, conflicts, oneResolved))).toEqual(['Father John Misty', 'Ravyn Lenae', 'Clipse'])
+  })
+
+  test('an artist in no conflict always stays', () => {
+    const resolved = {
+      [key(bigThief, fjm)]:   'Father John Misty',
+      [key(bigThief, ravyn)]: 'Ravyn Lenae',
+    }
+    expect(buildFinalSchedule(slots, conflicts, resolved)).toContain(loner)
+    expect(buildFinalSchedule([loner], [], {})).toEqual([loner])
   })
 })
