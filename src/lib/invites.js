@@ -71,7 +71,8 @@ export async function getInvite(slug) {
  *      "profiles: readable via active invite" RLS policy in migration 0003).
  *   2. Read the inviter's artists for the festival from user_artists (allowed
  *      by the "user_artists: readable via active invite" policy).
- *   3. Check for a duplicate friends row (name match) — skip if already linked.
+ *   3. Check for a duplicate friends row (same inviter via source_user_id) —
+ *      skip if already linked. Names can collide ('Your friend', first names).
  *   4. Insert a friends row: user_id = joiner, name = inviter, artists = theirs.
  *
  * @param {{ festival_key: string, inviter_user_id: string }} invite
@@ -103,12 +104,14 @@ export async function acceptInvite(invite, session) {
   const inviterArtists = (artistRows || []).map(r => r.artist_name)
 
   // ── 3. Duplicate check — don't add the same inviter twice ────────────────
+  //       Match on the inviter's user id, not the name: unnamed inviters all
+  //       share the 'Your friend' fallback, and real names can collide.
   const { data: existing } = await supabase
     .from('friends')
     .select('id')
     .eq('user_id', joinerId)
     .eq('festival_key', festKey)
-    .eq('name', inviterName)
+    .eq('source_user_id', inviterId)
 
   if (existing && existing.length > 0) {
     // Already in the joiner's list — nothing to insert
