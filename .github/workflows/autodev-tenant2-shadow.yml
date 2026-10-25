@@ -35,8 +35,7 @@ jobs:
       - name: Run current required tenant checks
         run: npm test && npm run build
 
-      - name: Measure pre-existing lint debt
-        continue-on-error: true
+      - name: Run required lint
         run: npm run lint
 
       - name: Validate AutoDev declaration
