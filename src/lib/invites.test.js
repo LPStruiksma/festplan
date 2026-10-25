@@ -3,7 +3,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 vi.mock('./supabase', () => ({
-  supabase: { from: vi.fn() },
+  supabase: { from: vi.fn(), rpc: vi.fn() },
 }))
 
 vi.mock('./profile', () => ({
@@ -13,7 +13,7 @@ vi.mock('./profile', () => ({
 
 import { supabase } from './supabase'
 import { loadArtists, loadArtistsFromCache } from './profile'
-import { acceptInvite, createInvite } from './invites'
+import { acceptInvite, createInvite, getInvite } from './invites'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,9 +22,16 @@ import { acceptInvite, createInvite } from './invites'
  * Builder methods return the chain; eq() filters the table's rows, so a
  * duplicate check only finds rows that match every column it filters on.
  */
-function makeDb(tables) {
+function makeDb(tables, { accepted = 'lowlands' } = {}) {
   const inserts = []
+  const calls = []
+  inserts.calls = calls
+  supabase.rpc.mockImplementation((fn, args) => {
+    calls.push(`rpc:${fn}`)
+    return Promise.resolve({ data: fn === 'accept_invite' ? accepted : null, error: null, args })
+  })
   supabase.from.mockImplementation((table) => {
+    calls.push(`from:${table}`)
     let rows = [...(tables[table] || [])]
     let head = false
     const chain = {
@@ -79,6 +86,62 @@ describe('acceptInvite duplicate check', () => {
 
     expect(result).toBe('lowlands')
     expect(inserts.filter(i => i.table === 'friends')).toHaveLength(0)
+  })
+})
+
+describe('acceptInvite records the acceptance first', () => {
+  it('calls accept_invite before reading the inviter\'s profile and artists', async () => {
+    const inserts = makeDb({ profiles: [], user_artists: [], friends: [] })
+
+    await acceptInvite(invite('a'), session)
+
+    expect(supabase.rpc).toHaveBeenCalledWith('accept_invite', { p_slug: 'slug-a' })
+    const { calls } = inserts
+    expect(calls[0]).toBe('rpc:accept_invite')
+    expect(calls).toContain('from:user_artists')
+  })
+
+  it('returns null and reads nothing when the invite cannot be accepted', async () => {
+    const inserts = makeDb({ profiles: [], user_artists: [], friends: [] }, { accepted: null })
+
+    const result = await acceptInvite(invite('a'), session)
+
+    expect(result).toBeNull()
+    expect(inserts.calls).toEqual(['rpc:accept_invite'])
+  })
+
+  it('takes the inviter\'s name from the invite and never reads profiles', async () => {
+    const inserts = makeDb({ profiles: [{ id: 'a', display_name: 'From profiles' }], user_artists: [], friends: [] })
+
+    await acceptInvite({ ...invite('a'), inviter_name: ' Sam ' }, session)
+
+    expect(inserts.calls).not.toContain('from:profiles')
+    expect(inserts.filter(i => i.table === 'friends')[0].row).toMatchObject({ name: 'Sam' })
+  })
+
+  it('no longer updates group_invites directly', async () => {
+    const inserts = makeDb({ profiles: [], user_artists: [], friends: [] })
+
+    await acceptInvite(invite('a'), session)
+
+    expect(inserts.calls).not.toContain('from:group_invites')
+  })
+})
+
+describe('getInvite', () => {
+  it('looks the invite up through get_invite', async () => {
+    const row = { slug: 's', festival_key: 'lowlands', inviter_user_id: 'a', expires_at: 'x' }
+    supabase.rpc.mockResolvedValue({ data: [row], error: null })
+
+    expect(await getInvite('s')).toEqual(row)
+    expect(supabase.rpc).toHaveBeenCalledWith('get_invite', { p_slug: 's' })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('returns null when get_invite finds nothing', async () => {
+    supabase.rpc.mockResolvedValue({ data: [], error: null })
+
+    expect(await getInvite('s')).toBeNull()
   })
 })
 
