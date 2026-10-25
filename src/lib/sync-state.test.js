@@ -328,3 +328,72 @@ describe('sequence numbers and other rows', () => {
   })
 })
 
+
+// A fresh copy of the module over the same localStorage, like a reload or a
+// second tab.
+async function freshTab() {
+  vi.resetModules()
+  const m = await import('./sync-state')
+  m.registerWriteHandler('rating', ratingHandler)
+  return m
+}
+
+const rating = (artist, value) => ({ type: 'rating', args: ['u1', 'lowlands', artist, value] })
+
+describe('stored state shared by reloads and tabs', () => {
+  it('queues a new failed write after the counter is lost but the done record is kept', async () => {
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    localStorage.removeItem('festplan_write_seq')
+    const m = await freshTab()
+    offline = true
+    await settle(m.withSync(() => ratingHandler('u1', 'lowlands', 'Clipse', 2), rating('Clipse', 2)))
+
+    expect(m.getPendingWrites().map(p => p.args[3])).toEqual([2])
+  })
+
+  it('keeps the done record to the newest 500 rows', async () => {
+    for (let i = 0; i < 600; i++) await settle(saveRating('u1', 'lowlands', 'A' + i, 1))
+    const rows = Object.keys(JSON.parse(localStorage.getItem('festplan_write_done')))
+
+    expect(rows).toHaveLength(500)
+    expect(rows.some(k => k.includes('"A599"'))).toBe(true)
+    expect(rows.some(k => k.includes('"A0"'))).toBe(false)
+  })
+
+  it('orders writes from two tabs', async () => {
+    const t1 = await freshTab()
+    const t2 = await freshTab()
+    offline = true
+    await settle(t1.withSync(() => ratingHandler('u1', 'lowlands', 'X', 1), rating('X', 1)))
+    await settle(t2.withSync(() => ratingHandler('u1', 'lowlands', 'X', 2), rating('X', 2)))
+    await settle(t1.withSync(() => ratingHandler('u1', 'lowlands', 'Y', 9), rating('Y', 9)))
+    const queued = t1.getPendingWrites()
+
+    expect(queued.map(p => p.args[2] + p.args[3])).toEqual(['X2', 'Y9'])
+    expect(queued[1].seq).toBeGreaterThan(queued[0].seq)
+  })
+
+  it('does not queue an older write from one tab after a newer one from another succeeded', async () => {
+    const t1 = await freshTab()
+    const t2 = await freshTab()
+    const slow = failLater()
+    const first = t1.withSync(() => slow.promise, rating('X', 3))
+    await settle(t2.withSync(() => ratingHandler('u1', 'lowlands', 'X', 5), rating('X', 5)))
+    slow.fail(new Error('net'))
+    await settle(first)
+
+    expect(t1.getPendingWrites()).toEqual([])
+  })
+
+  it('keeps working when the done record is corrupt', async () => {
+    localStorage.setItem('festplan_write_done', 'null')
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'X', 1))
+    expect(getPendingWrites()).toHaveLength(1)
+
+    localStorage.setItem('festplan_write_done', '[1,2]')
+    offline = false
+    await settle(saveRating('u1', 'lowlands', 'X', 2))
+    expect(getPendingWrites()).toEqual([])
+  })
+})

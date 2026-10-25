@@ -73,19 +73,24 @@ function seqOf(payload) {
 }
 
 // Sequence numbers must keep rising across reloads, because queued entries
-// outlive the page.  Start above both the stored counter and every queued seq.
+// and done records outlive the page.  Start above the stored counter, every
+// queued seq and every done seq, so a lost counter can't restart lower.
 let _lastSeq = 0
 function nextSeq() {
   let stored = 0
   try { stored = Number(localStorage.getItem(LS_SEQ_KEY)) || 0 } catch { /* storage unavailable */ }
   const queued = loadPending().reduce((max, p) => Math.max(max, seqOf(p)), 0)
-  _lastSeq = Math.max(_lastSeq, stored, queued) + 1
+  const done = Object.values(loadDone()).reduce((max, seq) => Math.max(max, Number(seq) || 0), 0)
+  _lastSeq = Math.max(_lastSeq, stored, queued, done) + 1
   try { localStorage.setItem(LS_SEQ_KEY, String(_lastSeq)) } catch { /* storage unavailable */ }
   return _lastSeq
 }
 
 function loadDone() {
-  try { return JSON.parse(localStorage.getItem(LS_DONE_KEY) || '{}') || {} } catch { return {} }
+  try {
+    const done = JSON.parse(localStorage.getItem(LS_DONE_KEY) || '{}')
+    return done && typeof done === 'object' && !Array.isArray(done) ? done : {}
+  } catch { return {} }
 }
 
 // Remember the newest write that reached the server for this row.  Only a
