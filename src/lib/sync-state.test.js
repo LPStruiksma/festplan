@@ -4,7 +4,6 @@ import {
   withSync,
   pushPendingWrite,
   getPendingWrites,
-  clearPendingWrites,
   drainPendingWrites,
   registerWriteHandler,
   resetSyncError,
@@ -40,7 +39,7 @@ beforeEach(() => {
   server = {}
   ratingHandler.mockClear()
   registerWriteHandler('rating', ratingHandler)
-  clearPendingWrites()
+  localStorage.clear()
   resetSyncError()
 })
 
@@ -136,5 +135,265 @@ describe('pending write replay', () => {
     pushPendingWrite({ type: 'other', args: [1] })
     pushPendingWrite({ type: 'other', args: [1] })
     expect(getPendingWrites()).toHaveLength(2)
+  })
+})
+
+// A write whose request stays open until the test settles it.
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+describe('overlapping writes to the same row', () => {
+  it('an older write that succeeds late does not drop a newer queued write', async () => {
+    const slow = deferred()
+    const first = withSync(
+      () => slow.promise.then(() => { server['u1|lowlands|Clipse'] = 3 }),
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3] }
+    )
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit queued
+    slow.resolve()
+    await settle(first)                                       // older edit lands
+
+    expect(getPendingWrites().map(p => p.args[3])).toEqual([5])
+
+    offline = false
+    await settle(drainPendingWrites())
+    expect(server['u1|lowlands|Clipse']).toBe(5)
+  })
+
+  it('a drained old value that succeeds does not drop a newer queued write', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))   // queued
+
+    const slow = deferred()
+    registerWriteHandler('rating', (...args) =>
+      slow.promise.then(() => ratingHandler(...args)))
+    offline = false
+    const drain = drainPendingWrites()                        // replay of 3 in flight
+
+    registerWriteHandler('rating', ratingHandler)
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit queued
+    offline = false
+    slow.resolve()
+    await settle(drain)                                       // replay of 3 lands
+
+    expect(getPendingWrites().map(p => p.args[3])).toEqual([5])
+  })
+
+  it('an older write that fails again does not replace a newer queued write', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))   // queued
+
+    const slow = deferred()
+    registerWriteHandler('rating', (...args) =>
+      slow.promise.then(() => ratingHandler(...args)))
+    const drain = drainPendingWrites()                        // replay of 3 in flight
+
+    registerWriteHandler('rating', ratingHandler)
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit queued
+    slow.resolve()
+    await settle(drain)                                       // replay of 3 fails, re-queued
+
+    expect(getPendingWrites().map(p => p.args[3])).toEqual([5])
+  })
+
+  it('a new success drops an old-format queued entry for the row', async () => {
+    localStorage.setItem('festplan_pending_writes', JSON.stringify([
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3] },
+    ]))
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+
+    expect(getPendingWrites()).toEqual([])
+  })
+
+  it('a new success drops an entry queued with a high number by an earlier session', async () => {
+    localStorage.setItem('festplan_pending_writes', JSON.stringify([
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3], seq: 9e15 },
+    ]))
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+
+    expect(getPendingWrites()).toEqual([])
+  })
+
+  it('a newer failed write replaces an old-format queued entry for the row', async () => {
+    localStorage.setItem('festplan_pending_writes', JSON.stringify([
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3] },
+    ]))
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+
+    expect(getPendingWrites().map(p => p.args[3])).toEqual([5])
+  })
+})
+
+// A request that stays open until the test makes it fail.
+function failLater() {
+  let fail
+  const promise = new Promise((_, rej) => { fail = rej })
+  promise.catch(() => {})
+  return { promise, fail }
+}
+
+describe('older writes that fail after a newer success', () => {
+  it('does not replay an older value that failed after a newer one succeeded', async () => {
+    const slow = failLater()
+    const first = withSync(() => slow.promise, { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 3] })
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit lands
+    slow.fail(new Error('net'))
+    await settle(first)                                       // older edit gives up
+
+    expect(getPendingWrites()).toEqual([])
+    await settle(drainPendingWrites())
+    expect(server['u1|lowlands|Clipse']).toBe(5)
+  })
+
+  it('does not re-queue a drained old value that fails after a newer edit succeeded', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))   // queued
+    offline = false
+
+    const slow = failLater()
+    registerWriteHandler('rating', () => slow.promise)
+    const drain = drainPendingWrites()                        // replay of 3 in flight
+    registerWriteHandler('rating', ratingHandler)
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))   // newer edit lands
+    slow.fail(new Error('net'))
+    await settle(drain)                                       // replay of 3 gives up
+
+    expect(getPendingWrites()).toEqual([])
+    await settle(drainPendingWrites())
+    expect(server['u1|lowlands|Clipse']).toBe(5)
+  })
+
+  it('still queues a failed write to another row', async () => {
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Dijon', 2))
+
+    expect(getPendingWrites().map(p => p.args[2])).toEqual(['Dijon'])
+  })
+})
+
+describe('sequence numbers and other rows', () => {
+  it('keeps rising across a module reload, and after the counter is lost', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 3))
+    const before = getPendingWrites()[0].seq
+
+    vi.resetModules()
+    const reloaded = await import('./sync-state')
+    await settle(reloaded.withSync(
+      () => ratingHandler('u1', 'lowlands', 'Dijon', 1),
+      { type: 'rating', args: ['u1', 'lowlands', 'Dijon', 1] }
+    ))
+    expect(reloaded.getPendingWrites().find(p => p.args[2] === 'Dijon').seq).toBeGreaterThan(before)
+
+    localStorage.removeItem('festplan_write_seq')
+    vi.resetModules()
+    const again = await import('./sync-state')
+    await settle(again.withSync(
+      () => ratingHandler('u1', 'lowlands', 'Clipse', 4),
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 4] }
+    ))
+    expect(again.getPendingWrites().find(p => p.args[2] === 'Clipse').args[3]).toBe(4)
+  })
+
+  it('leaves other rows and unknown types queued around one row\'s writes', async () => {
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Dijon', 2))
+    pushPendingWrite({ type: 'other', args: [1] })
+    offline = false
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 4))
+
+    expect(getPendingWrites().map(p => p.type + (p.args[2] || '')))
+      .toEqual(['ratingDijon', 'other', 'ratingClipse'])
+  })
+
+  it('replays the last of duplicate old-format entries alongside other rows', async () => {
+    localStorage.setItem('festplan_pending_writes', JSON.stringify([
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 1] },
+      { type: 'rating', args: ['u1', 'lowlands', 'Clipse', 2] },
+      { type: 'rating', args: ['u1', 'lowlands', 'Dijon', 7] },
+    ]))
+    await settle(drainPendingWrites())
+
+    expect(server).toEqual({ 'u1|lowlands|Clipse': 2, 'u1|lowlands|Dijon': 7 })
+    expect(getPendingWrites()).toEqual([])
+  })
+})
+
+
+// A fresh copy of the module over the same localStorage, like a reload or a
+// second tab.
+async function freshTab() {
+  vi.resetModules()
+  const m = await import('./sync-state')
+  m.registerWriteHandler('rating', ratingHandler)
+  return m
+}
+
+const rating = (artist, value) => ({ type: 'rating', args: ['u1', 'lowlands', artist, value] })
+
+describe('stored state shared by reloads and tabs', () => {
+  it('queues a new failed write after the counter is lost but the done record is kept', async () => {
+    await settle(saveRating('u1', 'lowlands', 'Clipse', 5))
+    localStorage.removeItem('festplan_write_seq')
+    const m = await freshTab()
+    offline = true
+    await settle(m.withSync(() => ratingHandler('u1', 'lowlands', 'Clipse', 2), rating('Clipse', 2)))
+
+    expect(m.getPendingWrites().map(p => p.args[3])).toEqual([2])
+  })
+
+  it('keeps the done record to the newest 500 rows', async () => {
+    for (let i = 0; i < 600; i++) await settle(saveRating('u1', 'lowlands', 'A' + i, 1))
+    const rows = Object.keys(JSON.parse(localStorage.getItem('festplan_write_done')))
+
+    expect(rows).toHaveLength(500)
+    expect(rows.some(k => k.includes('"A599"'))).toBe(true)
+    expect(rows.some(k => k.includes('"A0"'))).toBe(false)
+  })
+
+  it('orders writes from two tabs', async () => {
+    const t1 = await freshTab()
+    const t2 = await freshTab()
+    offline = true
+    await settle(t1.withSync(() => ratingHandler('u1', 'lowlands', 'X', 1), rating('X', 1)))
+    await settle(t2.withSync(() => ratingHandler('u1', 'lowlands', 'X', 2), rating('X', 2)))
+    await settle(t1.withSync(() => ratingHandler('u1', 'lowlands', 'Y', 9), rating('Y', 9)))
+    const queued = t1.getPendingWrites()
+
+    expect(queued.map(p => p.args[2] + p.args[3])).toEqual(['X2', 'Y9'])
+    expect(queued[1].seq).toBeGreaterThan(queued[0].seq)
+  })
+
+  it('does not queue an older write from one tab after a newer one from another succeeded', async () => {
+    const t1 = await freshTab()
+    const t2 = await freshTab()
+    const slow = failLater()
+    const first = t1.withSync(() => slow.promise, rating('X', 3))
+    await settle(t2.withSync(() => ratingHandler('u1', 'lowlands', 'X', 5), rating('X', 5)))
+    slow.fail(new Error('net'))
+    await settle(first)
+
+    expect(t1.getPendingWrites()).toEqual([])
+  })
+
+  it('keeps working when the done record is corrupt', async () => {
+    localStorage.setItem('festplan_write_done', 'null')
+    offline = true
+    await settle(saveRating('u1', 'lowlands', 'X', 1))
+    expect(getPendingWrites()).toHaveLength(1)
+
+    localStorage.setItem('festplan_write_done', '[1,2]')
+    offline = false
+    await settle(saveRating('u1', 'lowlands', 'X', 2))
+    expect(getPendingWrites()).toEqual([])
   })
 })

@@ -9,11 +9,17 @@
 //
 //  2. withSync() runs fn up to 3 times with exponential back-off.
 //     On success it transitions the state machine: syncing → idle.
-//     On success it also drops any queued write to the same row, so an
-//     older failed value can't be replayed over the newer one.
+//     Each call is stamped with a sequence number (seq) when it starts, so
+//     overlapping writes to one row can be ordered by when the user made them.
+//     On success it also drops queued writes to the same row that are older
+//     than this call, so an older failed value can't be replayed over the
+//     newer one, and a newer queued value isn't lost to an older success.
+//     It also records the highest seq that succeeded for each row.
 //     On final failure it:
 //       • pushes the payload to festplan_pending_writes[] in localStorage,
-//         replacing any older queued write to the same row
+//         replacing any older queued write to the same row (but never a
+//         newer one), and skipping it entirely if a newer write to that row
+//         already succeeded
 //       • transitions the state machine: syncing → error
 //
 //  3. SyncProvider makes the current status available to any component
@@ -33,6 +39,9 @@ import { createElement, createContext, useContext, useEffect, useState, useCallb
 // ── Pending writes queue ─────────────────────────────────────────────────────
 
 const LS_PENDING_KEY = 'festplan_pending_writes'
+const LS_SEQ_KEY     = 'festplan_write_seq'
+const LS_DONE_KEY    = 'festplan_write_done'   // { [row identity]: highest succeeded seq }
+const DONE_LIMIT     = 500                     // rows kept, newest seqs first
 
 function loadPending() {
   try { return JSON.parse(localStorage.getItem(LS_PENDING_KEY) || '[]') } catch { return [] }
@@ -57,21 +66,68 @@ function writeIdentity(payload) {
   }
 }
 
-function withoutIdentity(list, id) {
-  return id === null ? list : list.filter(p => writeIdentity(p) !== id)
+// Entries queued by older builds have no seq; they count as older than any
+// stamped write.
+function seqOf(payload) {
+  return Number.isFinite(payload?.seq) ? payload.seq : 0
 }
 
-/** Queue a failed write, replacing any older queued write to the same row. */
+// Sequence numbers must keep rising across reloads, because queued entries
+// and done records outlive the page.  Start above the stored counter, every
+// queued seq and every done seq, so a lost counter can't restart lower.
+let _lastSeq = 0
+function nextSeq() {
+  let stored = 0
+  try { stored = Number(localStorage.getItem(LS_SEQ_KEY)) || 0 } catch { /* storage unavailable */ }
+  const queued = loadPending().reduce((max, p) => Math.max(max, seqOf(p)), 0)
+  const done = Object.values(loadDone()).reduce((max, seq) => Math.max(max, Number(seq) || 0), 0)
+  _lastSeq = Math.max(_lastSeq, stored, queued, done) + 1
+  try { localStorage.setItem(LS_SEQ_KEY, String(_lastSeq)) } catch { /* storage unavailable */ }
+  return _lastSeq
+}
+
+function loadDone() {
+  try {
+    const done = JSON.parse(localStorage.getItem(LS_DONE_KEY) || '{}')
+    return done && typeof done === 'object' && !Array.isArray(done) ? done : {}
+  } catch { return {} }
+}
+
+// Remember the newest write that reached the server for this row.  Only a
+// write still in flight can fail after it, so the oldest rows can be dropped.
+function markDone(id, seq) {
+  const done = loadDone()
+  if ((done[id] ?? -1) >= seq) return
+  done[id] = seq
+  const ids = Object.keys(done)
+  if (ids.length > DONE_LIMIT) {
+    ids.sort((x, y) => done[y] - done[x]).slice(DONE_LIMIT).forEach(k => delete done[k])
+  }
+  try { localStorage.setItem(LS_DONE_KEY, JSON.stringify(done)) } catch { /* storage unavailable */ }
+}
+
+/**
+ * Queue a failed write, replacing any older queued write to the same row.
+ * If a newer write to that row is already queued, or already succeeded,
+ * this one is dropped.
+ */
 export function pushPendingWrite(payload) {
-  savePending([...withoutIdentity(loadPending(), writeIdentity(payload)), payload])
+  const id = writeIdentity(payload)
+  const pending = loadPending()
+  if (id !== null && seqOf(payload) <= (loadDone()[id] ?? -1)) return
+  if (id !== null && pending.some(p => writeIdentity(p) === id && seqOf(p) > seqOf(payload))) return
+  savePending([...(id === null ? pending : pending.filter(p => writeIdentity(p) !== id)), payload])
 }
 
-// A write to the same row succeeded, so any queued older value is stale.
+// A write to the same row succeeded, so queued values from before it are
+// stale, and so is any older write that fails later.  Queued values from
+// after it started are newer and stay.
 function dropPendingWrite(payload) {
   const id = writeIdentity(payload)
   if (id === null) return
+  markDone(id, seqOf(payload))
   const pending = loadPending()
-  const kept = withoutIdentity(pending, id)
+  const kept = pending.filter(p => writeIdentity(p) !== id || seqOf(p) > seqOf(payload))
   if (kept.length !== pending.length) savePending(kept)
 }
 
@@ -133,8 +189,11 @@ const BACKOFF_MS = [0, 1000, 2000]
  *                                       in localStorage on final failure so
  *                                       drainPendingWrites() can replay it.
  *                                       Shape: { type: string, args: any[] }
+ *                                       A payload that already has a seq
+ *                                       (a replayed queue entry) keeps it.
  */
 export async function withSync(fn, payload) {
+  if (payload && !('seq' in payload)) payload = { ...payload, seq: nextSeq() }
   _inflight++
   // Don't stomp an existing error — let it stay red until the user retries.
   if (_status !== 'error') { _status = 'syncing'; _notify() }
@@ -174,10 +233,13 @@ export async function drainPendingWrites() {
   const queued = getPendingWrites()
   if (!queued.length) return
 
-  // Older builds appended duplicates; replay only the newest write per row.
+  // Older builds appended duplicates; replay only the newest write per row
+  // (highest seq, and among equal seqs the one queued last).
   const pending = queued.filter((p, i) => {
     const id = writeIdentity(p)
-    return id === null || !queued.slice(i + 1).some(q => writeIdentity(q) === id)
+    return id === null || !queued.some((q, j) =>
+      j !== i && writeIdentity(q) === id &&
+      (seqOf(q) > seqOf(p) || (seqOf(q) === seqOf(p) && j > i)))
   })
 
   clearPendingWrites()  // remove before retry so partial success doesn't re-queue old items
@@ -187,7 +249,9 @@ export async function drainPendingWrites() {
     const handler = _handlers[payload.type]
     if (handler) {
       // withSync will re-queue to localStorage if this attempt also fails
-      await withSync(() => handler(...payload.args), payload)
+      // Keep the entry's original seq (0 for old entries) so a late success
+      // can't drop a newer write the user made while this replay ran.
+      await withSync(() => handler(...payload.args), { ...payload, seq: seqOf(payload) })
     } else {
       console.warn('[festplan] drainPendingWrites: no handler for type', payload.type)
     }
