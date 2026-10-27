@@ -25,13 +25,17 @@ import { supabase } from './supabase'
 // never hand a near-dead token to an API call that might take a few seconds.
 const REFRESH_BUFFER_MS = 60 * 1000
 
+// userId → the refresh currently running for that user (cleared when it settles).
+const inFlightRefreshes = new Map()
+
 /**
  * Returns a valid Spotify access token for `userId`.
  *
  * Flow:
  *   1. Read cached token + expiry from profiles.
  *   2. If still fresh (> 60 s remaining), return it immediately.
- *   3. Otherwise invoke the `refresh-spotify-token` Edge Function, which:
+ *   3. Otherwise invoke the `refresh-spotify-token` Edge Function (or join
+ *      the call already in flight for this user), which:
  *        a. Reads the stored refresh_token from the caller's profile.
  *        b. Exchanges it at Spotify's token endpoint (server-side, Basic auth).
  *        c. Persists and returns the new access_token + expires_at.
@@ -72,7 +76,31 @@ export async function getValidSpotifyToken(userId) {
     return accessToken
   }
 
-  // ── 3. Token is expired (or expiring) — call the Edge Function ────────────
+  // ── 3. Token is expired (or expiring) — refresh it once ───────────────────
+  // Concurrent callers (e.g. getTopArtists + getLikedSongArtists in parallel)
+  // join the refresh already in flight for this user instead of starting
+  // their own. Two exchanges of the same refresh token could fail if Spotify
+  // rotates it, so only one may run at a time.
+  let refresh = inFlightRefreshes.get(userId)
+  if (!refresh) {
+    refresh = refreshAccessToken().finally(() => {
+      inFlightRefreshes.delete(userId)
+    })
+    inFlightRefreshes.set(userId, refresh)
+  }
+
+  // ── 4. Return the fresh token ──────────────────────────────────────────────
+  return refresh
+}
+
+/**
+ * Invokes the `refresh-spotify-token` Edge Function and returns the new
+ * access token.
+ *
+ * @returns {Promise<string>}
+ * @throws  If the function errors or returns no access token
+ */
+async function refreshAccessToken() {
   // The function validates the caller's session JWT, reads their refresh token,
   // exchanges it at Spotify, persists the result, and returns the new tokens.
   const { data, error: fnError } = await supabase.functions.invoke(
@@ -96,6 +124,5 @@ export async function getValidSpotifyToken(userId) {
     )
   }
 
-  // ── 4. Return the fresh token ──────────────────────────────────────────────
   return data.access_token
 }
