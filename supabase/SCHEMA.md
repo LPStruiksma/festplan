@@ -173,7 +173,10 @@ the `resolved` state object in `SchedulePage`:
 
 The frontend builds the conflict key as
 `[artist_a, artist_b].sort().join('|||')`.  The database mirrors this by
-enforcing `artist_a < artist_b` (alphabetical), so the canonical form is
+enforcing `artist_a COLLATE "C" < artist_b COLLATE "C"` (byte order, the
+same order as JS `.sort()`; migration `0010_resolution_pair_order_c.sql`
+replaced a plain `artist_a < artist_b`, which used the database collation and
+could disagree with the app), so the canonical form is
 always preserved and the key can be reconstructed from the two columns
 without ambiguity.
 
@@ -191,7 +194,7 @@ without ambiguity.
 **Unique constraint:** `(user_id, festival_key, artist_a, artist_b)`
 
 **Check constraints:**
-- `chk_artist_order`: `artist_a < artist_b`
+- `chk_artist_order`: `artist_a COLLATE "C" < artist_b COLLATE "C"` (since 0010)
 - `chk_valid_choice`: `chosen_artist = artist_a OR chosen_artist = artist_b`
 
 **RLS:** owner can `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
