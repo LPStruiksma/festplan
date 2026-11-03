@@ -19,6 +19,115 @@ import ConflictBanner from '../components/schedule/ConflictBanner'
 import MyScheduleTab  from '../components/schedule/MyScheduleTab'
 import GroupTab       from '../components/schedule/GroupTab'
 
+
+// ── Spotify playlist builder (pure, testable) ────────────────────────────────
+// Uses only endpoints still open to Development Mode apps after Spotify's
+// February 2026 changes: POST /me/playlists (not /users/{id}/playlists),
+// POST /playlists/{id}/items (not /tracks) and a track search instead of
+// /artists/{id}/top-tracks. Search `limit` stays at 1 (Spotify caps it at 10).
+
+class SpotifyApiError extends Error {
+  constructor(status, path) {
+    super(`Spotify ${status}: ${path}`)
+    this.status = status
+    this.path = path
+  }
+}
+
+/** Plain-language toast text for a failed Spotify call. */
+function spotifyErrorMessage(err) {
+  switch (err?.status) {
+    case 401:
+      return 'Your Spotify session expired. Sign out and reconnect Spotify, then try again.'
+    case 403:
+      return "Spotify refused this request (403). FestPlan's Spotify app is in Development Mode, so only accounts the app owner has approved can build playlists. Your schedule is unchanged."
+    case 429:
+      return 'Spotify is rate-limiting requests right now. Wait a minute and try again.'
+    default:
+      return err?.status
+        ? `Spotify returned an error (${err.status}), so no playlist was created.`
+        : "Couldn't reach Spotify, so no playlist was created. Check your connection and try again."
+  }
+}
+
+/**
+ * Builds a private playlist with one track per scheduled artist.
+ * Resolves to { ok: true, message, url, count } or { ok: false, message, error }.
+ * Never throws.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export async function createSchedulePlaylist({ token, fest, schedule, fetchImpl = fetch, now = new Date() }) {
+  const sp = async (path, opts = {}) => {
+    const r = await fetchImpl(`https://api.spotify.com/v1${path}`, {
+      ...opts,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+    })
+    if (!r.ok) throw new SpotifyApiError(r.status, path)
+    return r.json()
+  }
+
+  const seen = new Set()
+  const uniqueArtists = schedule
+    .slice()
+    .sort((a, b) => a.day - b.day || toMins(a.start) - toMins(b.start))
+    .map(s => s.artist)
+    .filter(a => {
+      if (seen.has(a)) return false
+      seen.add(a); return true
+    })
+
+  try {
+    const searches = await Promise.allSettled(
+      uniqueArtists.map(name =>
+        sp(`/search?q=${encodeURIComponent(`artist:"${name.replace(/"/g, '')}"`)}&type=track&limit=1`)
+          .then(r => r.tracks?.items?.[0]?.uri ?? null)
+      )
+    )
+    const uris = searches.map(s => (s.status === 'fulfilled' ? s.value : null)).filter(Boolean)
+
+    if (!uris.length) {
+      const failed = searches.find(s => s.status === 'rejected')
+      if (failed) throw failed.reason
+      return {
+        ok: false,
+        message: uniqueArtists.length
+          ? `Spotify found no tracks for any of your ${uniqueArtists.length} scheduled artists, so no playlist was created.`
+          : 'Your schedule has no artists yet, so there is nothing to add to a playlist.',
+      }
+    }
+
+    const playlist = await sp('/me/playlists', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `${fest.name} — My Picks`,
+        public: false,
+        description: `My festival schedule built with Festplan · ${now.toLocaleDateString()}`,
+      }),
+    })
+
+    await sp(`/playlists/${playlist.id}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ uris }),
+    })
+
+    const missing = uniqueArtists.length - uris.length
+    return {
+      ok: true,
+      count: uris.length,
+      url: playlist.external_urls?.spotify,
+      message: missing
+        ? `Playlist created — ${uris.length} tracks added (no match for ${missing} artist${missing === 1 ? '' : 's'}).`
+        : `Playlist created — ${uris.length} tracks added!`,
+    }
+  } catch (err) {
+    return { ok: false, error: err, message: spotifyErrorMessage(err) }
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SCHEDULE PAGE — Festival Noir
    Thin orchestrator: all state + derived data lives here;
@@ -257,75 +366,14 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
       return
     }
 
-    const sp = (path, opts = {}) =>
-      fetch(`https://api.spotify.com/v1${path}`, {
-        ...opts,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          ...(opts.headers || {}),
-        },
-      }).then(r => r.ok ? r.json() : Promise.reject(new Error(`Spotify ${r.status}: ${path}`)))
-
     showToast('loading', `Building your ${fest.name} playlist…`)
 
-    try {
-      const me = await sp('/me')
-      const spotifyUserId = me.id
-
-      const orderedArtists = finalSchedule
-        .slice()
-        .sort((a, b) => a.day - b.day || toMins(a.start) - toMins(b.start))
-        .map(s => s.artist)
-
-      const seen = new Set()
-      const uniqueArtists = orderedArtists.filter(a => {
-        if (seen.has(a)) return false
-        seen.add(a); return true
-      })
-
-      const artistResults = await Promise.all(
-        uniqueArtists.map(name =>
-          sp(`/search?q=${encodeURIComponent(name)}&type=artist&limit=1`)
-            .then(r => r.artists?.items?.[0] ?? null)
-            .catch(() => null)
-        )
-      )
-
-      const topTrackUris = await Promise.all(
-        artistResults.map(artist =>
-          artist
-            ? sp(`/artists/${artist.id}/top-tracks?market=from_token`)
-                .then(r => r.tracks?.[0]?.uri ?? null)
-                .catch(() => null)
-            : Promise.resolve(null)
-        )
-      )
-
-      const uris = topTrackUris.filter(Boolean)
-      if (!uris.length) {
-        showToast('error', "Couldn't find any tracks — check your Spotify region settings.")
-        return
-      }
-
-      const playlist = await sp(`/users/${spotifyUserId}/playlists`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: `${fest.name} — My Picks`,
-          public: false,
-          description: `My festival schedule built with Festplan · ${new Date().toLocaleDateString()}`,
-        }),
-      })
-
-      await sp(`/playlists/${playlist.id}/tracks`, {
-        method: 'POST',
-        body: JSON.stringify({ uris }),
-      })
-
-      showToast('success', `Playlist created — ${uris.length} tracks added!`, playlist.external_urls?.spotify)
-    } catch (err) {
-      console.error('[festplan] buildSpotifyPlaylist:', err)
-      showToast('error', 'Something went wrong. Check the console for details.')
+    const result = await createSchedulePlaylist({ token, fest, schedule: finalSchedule })
+    if (result.ok) {
+      showToast('success', result.message, result.url)
+    } else {
+      if (result.error) console.error('[festplan] buildSpotifyPlaylist:', result.error)
+      showToast('error', result.message)
     }
   }
 
