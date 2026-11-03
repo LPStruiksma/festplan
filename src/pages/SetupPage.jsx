@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAllUserArtists } from '../lib/spotify'
 import { FEST_COLORS, norm } from '../lib/festivals'
@@ -6,6 +6,7 @@ import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, reco
 import { getValidSpotifyToken } from '../lib/spotify-auth'
 import { supabase } from '../lib/supabase'
 import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
+import { isPastFestival, splitPastFestivals } from '../lib/upcoming'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SETUP PAGE — Festival Noir
@@ -17,7 +18,8 @@ const T = {
   body: "var(--fp-font-body)",
 }
 
-export default function SetupPage({ session }) {
+// `today` is injectable for tests; festivals that ended before it are hidden.
+export default function SetupPage({ session, today = new Date() }) {
   const navigate = useNavigate()
 
   // Seed from localStorage cache so the chip list paints instantly on return
@@ -34,6 +36,7 @@ export default function SetupPage({ session }) {
   const [discoverySource, setDiscoverySource] = useState(null)
   // All festivals for the Plan mode picker — loaded from Supabase on mount
   const [planFestivals, setPlanFestivals] = useState([])
+  const [planLoaded, setPlanLoaded] = useState(false)
 
   // Festival comparison — up to 4 IDs selected in Find mode
   const [compareIds, setCompareIds] = useState(new Set())
@@ -100,7 +103,7 @@ export default function SetupPage({ session }) {
 
   // Load all seeded festivals for the Plan mode picker on first mount
   useEffect(() => {
-    fetchAllFestivals().then(setPlanFestivals)
+    fetchAllFestivals().then(list => { setPlanFestivals(list || []); setPlanLoaded(true) })
   }, [])
 
   // Keep localStorage in sync immediately whenever myArtists changes (after
@@ -151,7 +154,7 @@ export default function SetupPage({ session }) {
     try {
       const token = await getValidSpotifyToken(session?.user?.id)
       const recs  = await recommendFestivals(artists, token)
-      setRecommendations(recs.slice(0, 3))
+      setRecommendations(recs)
     } catch (e) {
       // Silently degrade — recommendations are non-critical
       console.warn('Recommendations failed:', e)
@@ -242,6 +245,60 @@ export default function SetupPage({ session }) {
     color: color || 'var(--fp-accent)',
     marginBottom: 16,
   })
+
+  // One card in the Plan mode picker (used for upcoming and past festivals).
+  const planCard = f => {
+    const fac = f.accentColor || FEST_COLORS[f.id]
+    const sel = festId === f.id
+    return (
+      <div key={f.id}
+        onClick={() => setFestId(f.id === festId ? null : f.id)}
+        style={{
+          padding: 16,
+          borderRadius: 'var(--fp-radius-md)',
+          cursor: 'pointer',
+          border: `1px solid ${sel ? fac : 'var(--fp-border)'}`,
+          background: sel ? `${fac}12` : 'var(--fp-s2)',
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+        onMouseEnter={e => {
+          if (!sel) e.currentTarget.style.borderColor = 'var(--fp-border2)'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={e => {
+          if (!sel) e.currentTarget.style.borderColor = 'var(--fp-border)'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
+      >
+        {sel && <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+          background: fac,
+        }} />}
+        <div style={{ fontSize: 28, marginBottom: 8 }}>{f.emoji}</div>
+        <div style={{
+          fontFamily: T.display,
+          fontSize: 12,
+          fontWeight: 700,
+          color: sel ? fac : 'var(--fp-text)',
+          textTransform: 'uppercase',
+          lineHeight: 1.2,
+          marginBottom: 4,
+        }}>{f.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--fp-text-dim)', marginBottom: 3 }}>{f.location}</div>
+        <div style={{ fontSize: 10, color: sel ? fac : 'var(--fp-text-mute)', fontWeight: 500 }}>
+          {f.days[0].split(' ')[1]} – {f.days[f.days.length - 1]}
+        </div>
+      </div>
+    )
+  }
+
+  // Festivals that are over stay out of "find" and out of the main plan grid.
+  const { upcoming: upcomingPlan, past: pastPlan } = splitPastFestivals(planFestivals, today)
+  const upcomingDiscovered = discoveredFestivals.filter(f => !isPastFestival(f, today))
+  const upcomingRecommendations = recommendations.filter(f => !isPastFestival(f, today)).slice(0, 3)
+  const noUpcomingFound = !discovering && discoveredFestivals.length > 0 && upcomingDiscovered.length === 0
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--fp-bg)', color: 'var(--fp-text)' }}>
@@ -536,56 +593,28 @@ export default function SetupPage({ session }) {
               <div style={sectionLabel()}>② Choose Your Festival</div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                {planFestivals.map(f => {
-                  const fac = f.accentColor || FEST_COLORS[f.id]
-                  const sel = festId === f.id
-                  return (
-                    <div key={f.id}
-                      onClick={() => setFestId(f.id === festId ? null : f.id)}
-                      style={{
-                        padding: 16,
-                        borderRadius: 'var(--fp-radius-md)',
-                        cursor: 'pointer',
-                        border: `1px solid ${sel ? fac : 'var(--fp-border)'}`,
-                        background: sel ? `${fac}12` : 'var(--fp-s2)',
-                        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                        position: 'relative',
-                        overflow: 'hidden',
-                      }}
-                      onMouseEnter={e => {
-                        if (!sel) e.currentTarget.style.borderColor = 'var(--fp-border2)'
-                        e.currentTarget.style.transform = 'translateY(-2px)'
-                      }}
-                      onMouseLeave={e => {
-                        if (!sel) e.currentTarget.style.borderColor = 'var(--fp-border)'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                      }}
-                    >
-                      {sel && <div style={{
-                        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-                        background: fac,
-                      }} />}
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>{f.emoji}</div>
-                      <div style={{
-                        fontFamily: T.display,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: sel ? fac : 'var(--fp-text)',
-                        textTransform: 'uppercase',
-                        lineHeight: 1.2,
-                        marginBottom: 4,
-                      }}>{f.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--fp-text-dim)', marginBottom: 3 }}>{f.location}</div>
-                      <div style={{ fontSize: 10, color: sel ? fac : 'var(--fp-text-mute)', fontWeight: 500 }}>
-                        {f.days[0].split(' ')[1]} – {f.days[f.days.length - 1]}
-                      </div>
-                    </div>
-                  )
-                })}
+                {upcomingPlan.map(planCard)}
               </div>
 
+              {planLoaded && upcomingPlan.length === 0 && (
+                <p style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '4px 0 0' }}>
+                  No upcoming festivals yet
+                </p>
+              )}
+
+              {pastPlan.length > 0 && (
+                <details style={{ marginTop: 20 }}>
+                  <summary style={{ ...sectionLabel('var(--fp-text-dim)'), cursor: 'pointer', marginBottom: 12 }}>
+                    Past festivals ({pastPlan.length})
+                  </summary>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, opacity: 0.6 }}>
+                    {pastPlan.map(planCard)}
+                  </div>
+                </details>
+              )}
+
               {/* Live-discovered festivals not already in the plan grid (plan mode) */}
-              {discoveredFestivals.filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0).length > 0 && (
+              {upcomingDiscovered.filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0).length > 0 && (
                 <>
                   <div style={{
                     ...sectionLabel('var(--fp-text-dim)'),
@@ -600,7 +629,7 @@ export default function SetupPage({ session }) {
                     }}>LIVE</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                    {discoveredFestivals
+                    {upcomingDiscovered
                       .filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0)
                       .slice(0, 8)
                       .map(f => {
@@ -728,7 +757,13 @@ export default function SetupPage({ session }) {
               )}
             </div>
 
-            {discoveredFestivals.map((f, idx) => {
+            {noUpcomingFound && (
+              <p style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '0 0 12px' }}>
+                No upcoming festivals yet
+              </p>
+            )}
+
+            {upcomingDiscovered.map((f, idx) => {
               const fac = getColor(f.id) || f.accentColor || 'var(--fp-accent)'
               const count = f.matchCount
               const matches = f.matchedArtists || []
@@ -905,7 +940,7 @@ export default function SetupPage({ session }) {
             })}
 
             {/* ── "You might also like" — related-artist recommendations ─── */}
-            {myArtists.length >= 5 && (recommendations.length > 0 || recommending) && (
+            {myArtists.length >= 5 && (upcomingRecommendations.length > 0 || recommending) && (
               <div style={{ marginTop: 32 }}>
                 <div style={{
                   ...sectionLabel('#22d3ee'),
@@ -925,7 +960,7 @@ export default function SetupPage({ session }) {
                   )}
                 </div>
 
-                {recommending && recommendations.length === 0 ? (
+                {recommending && upcomingRecommendations.length === 0 ? (
                   // Skeleton placeholder while loading
                   [0, 1, 2].map(i => (
                     <div key={i} style={{
@@ -937,7 +972,7 @@ export default function SetupPage({ session }) {
                       animation: 'fp-pulse 1.5s ease infinite',
                     }} />
                   ))
-                ) : recommendations.map((f, idx) => {
+                ) : upcomingRecommendations.map((f, idx) => {
                   const fac = '#22d3ee'
                   return (
                     <div key={f.id} style={{
