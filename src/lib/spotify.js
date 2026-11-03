@@ -19,7 +19,11 @@ async function spotifyFetch(endpoint, accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` }
   })
   if (res.status === 401) throw new Error('Spotify token expired. Please log in again.')
-  if (!res.ok) throw new Error(`Spotify API error: ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(`Spotify API error: ${res.status}`)
+    err.status = res.status
+    throw err
+  }
   return res.json()
 }
 
@@ -43,7 +47,9 @@ export async function getLikedSongArtists(userId) {
   return [...new Set(artists)]
 }
 
-// Get the user's playlists (name, id, track count, cover image)
+// Get the user's playlists (name, id, track count, cover image).
+// Spotify's February 2026 migration renamed the playlist's `tracks` count
+// object to `items`; read the new name first and fall back to the old one.
 export async function getPlaylists(userId) {
   const token = await getValidSpotifyToken(userId)
   const data = await spotifyFetch('/me/playlists?limit=50', token)
@@ -52,21 +58,35 @@ export async function getPlaylists(userId) {
     .map(p => ({
       id: p.id,
       name: p.name,
-      trackCount: p.tracks.total,
+      trackCount: p.items?.total ?? p.tracks?.total ?? 0,
       image: p.images?.[0]?.url ?? null
     }))
 }
 
-// Get all artists from a specific playlist (up to 100 tracks)
+// Get all artists from a specific playlist (up to 100 items).
+// Since Spotify's February 2026 migration this is /playlists/{id}/items (was
+// /tracks), each entry holds the track under `item` (was `track`), and
+// Spotify only serves playlists the user owns or collaborates on (403 otherwise).
+export const PLAYLIST_NOT_OWNED_MESSAGE =
+  'Spotify only lets FestPlan read playlists you own or collaborate on. ' +
+  'Pick one of your own playlists, or copy this one to your library first.'
+
 export async function getPlaylistArtists(userId, playlistId) {
   const token = await getValidSpotifyToken(userId)
-  const data = await spotifyFetch(
-    `/playlists/${playlistId}/tracks?limit=100&fields=items(track(artists(name)))`,
-    token
-  )
-  const artists = data.items
-    .filter(item => item.track)
-    .flatMap(item => item.track.artists.map(a => a.name))
+  let data
+  try {
+    data = await spotifyFetch(
+      `/playlists/${encodeURIComponent(playlistId)}/items?limit=100`,
+      token
+    )
+  } catch (err) {
+    if (err.status === 403) throw new Error(PLAYLIST_NOT_OWNED_MESSAGE)
+    throw err
+  }
+  const artists = (data.items ?? [])
+    .map(entry => entry?.item ?? entry?.track)
+    .filter(track => track?.artists)
+    .flatMap(track => track.artists.map(a => a.name))
   return [...new Set(artists)]
 }
 
