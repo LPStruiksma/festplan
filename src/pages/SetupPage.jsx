@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAllUserArtists } from '../lib/spotify'
 import { FEST_COLORS, norm } from '../lib/festivals'
-import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, recommendFestivals, ensureFestivalIngested } from '../lib/api'
-import { getValidSpotifyToken } from '../lib/spotify-auth'
+import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, ensureFestivalIngested } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
 import { isPastFestival, splitPastFestivals } from '../lib/upcoming'
@@ -40,13 +39,6 @@ export default function SetupPage({ session, today = new Date() }) {
 
   // Festival comparison — up to 4 IDs selected in Find mode
   const [compareIds, setCompareIds] = useState(new Set())
-
-  // Related-artist recommendations — "You might also like"
-  const [recommendations, setRecommendations]   = useState([])
-  const [recommending,    setRecommending]       = useState(false)
-  // True once a recommendations call has finished (ok, empty or failed), so an
-  // empty result shows a short "unavailable" line instead of vanishing.
-  const [recsSettled,     setRecsSettled]        = useState(false)
 
   // ID of the festival currently being ingested into Supabase, or null.
   const [ingestingId, setIngestingId] = useState(null)
@@ -148,35 +140,11 @@ export default function SetupPage({ session, today = new Date() }) {
     }
   }, [])
 
-  // Fetch related-artist recommendations — only when the user has ≥5 artists.
-  // We get their stored Spotify token first so the edge function can call the
-  // Spotify related-artists API on the server without exposing the secret.
-  const runRecommendations = useCallback(async (artists) => {
-    if (artists.length < 5) return
-    setRecommending(true)
-    setRecsSettled(false)
-    try {
-      const token = await getValidSpotifyToken(session?.user?.id)
-      const recs  = await recommendFestivals(artists, token)
-      setRecommendations(recs)
-    } catch (e) {
-      // Degrade to the "unavailable" line — recommendations are non-critical
-      console.warn('Recommendations failed:', e)
-      setRecommendations([])
-    } finally {
-      setRecommending(false)
-      setRecsSettled(true)
-    }
-  }, [session])
-
   useEffect(() => {
     if (setupMode === 'find' && myArtists.length && !fetching) {
       runDiscovery(myArtists)
     }
-    if (setupMode === 'find' && myArtists.length >= 5 && !fetching) {
-      runRecommendations(myArtists)
-    }
-  }, [setupMode, myArtists, fetching, runDiscovery, runRecommendations])
+  }, [setupMode, myArtists, fetching, runDiscovery])
 
   const hints = artistInput.length >= 2
     ? artistCache.filter(a =>
@@ -302,7 +270,6 @@ export default function SetupPage({ session, today = new Date() }) {
   // Festivals that are over stay out of "find" and out of the main plan grid.
   const { upcoming: upcomingPlan, past: pastPlan } = splitPastFestivals(planFestivals, today)
   const upcomingDiscovered = discoveredFestivals.filter(f => !isPastFestival(f, today))
-  const upcomingRecommendations = recommendations.filter(f => !isPastFestival(f, today)).slice(0, 3)
   const noUpcomingFound = !discovering && discoveredFestivals.length > 0 && upcomingDiscovered.length === 0
 
   return (
@@ -943,125 +910,6 @@ export default function SetupPage({ session, today = new Date() }) {
                 </div>
               )
             })}
-
-            {/* ── "You might also like" — related-artist recommendations ─── */}
-            {myArtists.length >= 5 && (upcomingRecommendations.length > 0 || recommending || recsSettled) && (
-              <div style={{ marginTop: 32 }}>
-                <div style={{
-                  ...sectionLabel('#22d3ee'),
-                  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
-                }}>
-                  <span>You might also like</span>
-                  <span style={{
-                    fontSize: 8, padding: '3px 7px', borderRadius: 3,
-                    background: '#22d3ee18', color: '#22d3ee',
-                    fontWeight: 700, letterSpacing: 1,
-                  }}>RELATED ARTISTS</span>
-                  {recommending && (
-                    <span style={{
-                      fontSize: 10, color: 'var(--fp-text-dim)', fontWeight: 400,
-                      letterSpacing: 1, animation: 'fp-pulse 1.5s ease infinite',
-                    }}>Finding...</span>
-                  )}
-                </div>
-
-                {recommending && upcomingRecommendations.length === 0 ? (
-                  // Skeleton placeholder while loading
-                  [0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      height: 88,
-                      background: 'var(--fp-s2)',
-                      borderRadius: 'var(--fp-radius-lg)',
-                      marginBottom: 12,
-                      opacity: 0.4,
-                      animation: 'fp-pulse 1.5s ease infinite',
-                    }} />
-                  ))
-                ) : upcomingRecommendations.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--fp-text-dim)' }}>
-                    Recommendations are unavailable right now
-                  </div>
-                ) : upcomingRecommendations.map((f, idx) => {
-                  const fac = '#22d3ee'
-                  return (
-                    <div key={f.id} style={{
-                      background:    'var(--fp-card)',
-                      border:        `1px solid ${fac}35`,
-                      borderRadius:  'var(--fp-radius-lg)',
-                      padding:       '16px 20px',
-                      marginBottom:  12,
-                      position:      'relative',
-                      overflow:      'hidden',
-                      animation:     `fp-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.08}s both`,
-                    }}>
-                      {/* Left accent bar */}
-                      <div style={{
-                        position: 'absolute', top: 0, left: 0, bottom: 0, width: 3,
-                        background: fac, borderRadius: '3px 0 0 3px', opacity: 0.7,
-                      }} />
-
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingLeft: 6 }}>
-                        <div style={{ fontSize: 28, flexShrink: 0, lineHeight: 1 }}>{f.emoji}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                            <div style={{
-                              fontFamily: T.display, fontSize: 13, fontWeight: 700,
-                              color: fac, textTransform: 'uppercase',
-                            }}>{f.name}</div>
-                            {/* Match counts */}
-                            <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 10, color: 'var(--fp-text-dim)', lineHeight: 1.4 }}>
-                              <span style={{ color: fac, fontWeight: 700 }}>{f.originalMatchCount}</span> direct
-                              <span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>
-                              <span style={{ color: fac, fontWeight: 700 }}>{f.matchDifference}</span> via related
-                            </div>
-                          </div>
-
-                          <div style={{ fontSize: 11, color: 'var(--fp-text-mute)', marginBottom: 8 }}>
-                            {f.location}
-                            {f.days?.length ? ` · ${f.days[0]} – ${f.days[f.days.length - 1]}` : ''}
-                          </div>
-
-                          {/* Related artist chips */}
-                          {f.relatedMatchedArtists?.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
-                              {f.relatedMatchedArtists.slice(0, 5).map(a => (
-                                <span key={a} style={{
-                                  fontSize: 10, padding: '3px 8px', borderRadius: 3,
-                                  border: `1px solid ${fac}40`, color: fac,
-                                  fontWeight: 600, background: `${fac}08`,
-                                }}>{a}</span>
-                              ))}
-                              {f.relatedMatchedArtists.length > 5 && (
-                                <span style={{ fontSize: 10, color: 'var(--fp-text-dim)', alignSelf: 'center' }}>
-                                  +{f.relatedMatchedArtists.length - 5} more
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          <button onClick={() => goToSchedule(f.id)} style={{
-                            background:    'transparent',
-                            color:         fac,
-                            border:        `1px solid ${fac}50`,
-                            borderRadius:  'var(--fp-radius-sm)',
-                            padding:       '7px 16px',
-                            fontFamily:    T.body,
-                            fontSize:      10,
-                            fontWeight:    800,
-                            cursor:        'pointer',
-                            letterSpacing: 2,
-                            textTransform: 'uppercase',
-                            transition:    'all 0.2s ease',
-                          }}>
-                            Explore Festival →
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
 
             {discovering && discoveredFestivals.length === 0 && (
               <div style={{

@@ -40,8 +40,8 @@ Background, from the official pages as summarised by search on 2026-11-03:
 
 | # | Endpoint | Used in | Status | Valid until |
 | --- | --- | --- | --- | --- |
-| S1 | `/search` (artist, `limit=1`) | `recommend-festivals` `searchArtistId`; `SchedulePage.jsx` playlist builder | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
-| S2 | `/artists/{id}/related-artists` | `supabase/functions/recommend-festivals/index.ts` `getRelatedArtistNames` | broken (likely): restricted since 2024-11-27 for apps like this one. Errors become `[]`, and `SetupPage.jsx` `runRecommendations` hides the section, so users see nothing. | passed; festplan#31 |
+| S1 | `/search` (artist, `limit=1`) | `SchedulePage.jsx` playlist builder | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
+| S2 | `/artists/{id}/related-artists` | none since festplan#31 unit C: the `recommend-festivals` edge function and the Setup page "You might also like" section were removed | not called: unavailable to Development Mode apps (restricted since 2024-11-27), and Lukas chose to stay in Development Mode (festplan#35). Recheck only if the app moves to Extended Quota. | no expiry |
 | S3 | `/artists/{id}/top-tracks` | `SchedulePage.jsx` `buildSpotifyPlaylist` | broken (likely): reported removed in the 2026-02 migration. Every URI comes back null, so the toast blames region settings. | passed; festplan#31 |
 | S4 | `/me/top/artists` (`limit=50`, `medium_term`) | `src/lib/spotify.js` `getTopArtists` | verify: not in the reported removals; `limit=50` may meet a new cap | 2026-12-01 recheck |
 | S5 | `/me/tracks` (`limit=50`) | `src/lib/spotify.js` `getLikedSongArtists` | verify, as S4 | 2026-12-01 recheck |

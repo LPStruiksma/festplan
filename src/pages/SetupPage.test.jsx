@@ -3,13 +3,14 @@ import React from 'react'
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter } from 'react-router-dom'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 vi.mock('../lib/api', () => ({
   discoverFestivals: vi.fn(async () => ({ source: 'fallback', festivals: [] })),
   mergeFestivals: vi.fn(async f => f),
   fetchAllFestivals: vi.fn(),
   artistCache: [],
-  recommendFestivals: vi.fn(async () => []),
   ensureFestivalIngested: vi.fn(async () => true),
 }))
 vi.mock('../lib/spotify', () => ({ getAllUserArtists: vi.fn(async () => []) }))
@@ -21,7 +22,7 @@ vi.mock('../lib/profile', () => ({
   saveArtistsRemote: vi.fn(async () => {}),
 }))
 
-import { fetchAllFestivals, discoverFestivals, recommendFestivals } from '../lib/api'
+import { fetchAllFestivals, discoverFestivals } from '../lib/api'
 import { loadArtistsFromCache, loadArtists } from '../lib/profile'
 import SetupPage from './SetupPage'
 
@@ -116,47 +117,32 @@ describe('SetupPage find mode hides festivals that are over', () => {
   })
 })
 
-describe('SetupPage "You might also like" recommendations', () => {
+// Related Artists is unavailable to Spotify Development Mode apps (festplan#31,
+// Lukas chose to stay in Development Mode in #35), so the related-artist
+// "You might also like" section and its edge function call were removed.
+describe('SetupPage without related-artist recommendations', () => {
   const FIVE = ['Daft Punk', 'Justice', 'Air', 'Phoenix', 'Cassius']
-  const RECOMMENDED = {
-    ...fest('related', 'Related Fest', '2027-07-01', '2027-07-03'),
-    originalMatchCount: 1, matchDifference: 2, relatedMatchedArtists: ['Kavinsky'],
-  }
 
   beforeEach(() => {
     fetchAllFestivals.mockResolvedValue([])
     loadArtists.mockResolvedValue(FIVE)
-    discoverFestivals.mockResolvedValue({ source: 'fallback', festivals: [] })
-    recommendFestivals.mockReset()
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    discoverFestivals.mockReset()
+    discoverFestivals.mockResolvedValue({ source: 'fallback', festivals: [{ ...UPCOMING, matchCount: 2, matchedArtists: ['Daft Punk'], lineup: [] }] })
   })
 
-  async function openFind() {
+  it('shows Find results with no "You might also like" section and no unavailable line', async () => {
     renderSetup()
     fireEvent.click(await screen.findByText(/Find My Festival/))
-  }
 
-  it('shows the recommended festivals when the call returns some', async () => {
-    recommendFestivals.mockResolvedValue([RECOMMENDED])
-    await openFind()
-
-    expect(await screen.findByText('Related Fest')).toBeInTheDocument()
-    expect(screen.getByText('You might also like')).toBeInTheDocument()
+    expect(await screen.findByText('Next Summer')).toBeInTheDocument()
+    expect(discoverFestivals).toHaveBeenCalledWith(FIVE)
+    expect(screen.queryByText('You might also like')).not.toBeInTheDocument()
     expect(screen.queryByText('Recommendations are unavailable right now')).not.toBeInTheDocument()
+    expect(screen.queryByText('RELATED ARTISTS')).not.toBeInTheDocument()
   })
 
-  it('says recommendations are unavailable when the call errors', async () => {
-    recommendFestivals.mockRejectedValue(new Error('edge function down'))
-    await openFind()
-
-    expect(await screen.findByText('Recommendations are unavailable right now')).toBeInTheDocument()
-    expect(screen.queryByText('Related Fest')).not.toBeInTheDocument()
-  })
-
-  it('says recommendations are unavailable when the call returns nothing', async () => {
-    recommendFestivals.mockResolvedValue([])
-    await openFind()
-
-    expect(await screen.findByText('Recommendations are unavailable right now')).toBeInTheDocument()
+  it('no longer asks for a Spotify token on the Setup page', () => {
+    const src = readFileSync(join(import.meta.dirname, 'SetupPage.jsx'), 'utf8')
+    expect(src).not.toMatch(/recommendFestivals|getValidSpotifyToken/)
   })
 })
