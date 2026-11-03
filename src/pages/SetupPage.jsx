@@ -44,6 +44,9 @@ export default function SetupPage({ session, today = new Date() }) {
   // Related-artist recommendations — "You might also like"
   const [recommendations, setRecommendations]   = useState([])
   const [recommending,    setRecommending]       = useState(false)
+  // True once a recommendations call has finished (ok, empty or failed), so an
+  // empty result shows a short "unavailable" line instead of vanishing.
+  const [recsSettled,     setRecsSettled]        = useState(false)
 
   // ID of the festival currently being ingested into Supabase, or null.
   const [ingestingId, setIngestingId] = useState(null)
@@ -151,16 +154,18 @@ export default function SetupPage({ session, today = new Date() }) {
   const runRecommendations = useCallback(async (artists) => {
     if (artists.length < 5) return
     setRecommending(true)
+    setRecsSettled(false)
     try {
       const token = await getValidSpotifyToken(session?.user?.id)
       const recs  = await recommendFestivals(artists, token)
       setRecommendations(recs)
     } catch (e) {
-      // Silently degrade — recommendations are non-critical
+      // Degrade to the "unavailable" line — recommendations are non-critical
       console.warn('Recommendations failed:', e)
       setRecommendations([])
     } finally {
       setRecommending(false)
+      setRecsSettled(true)
     }
   }, [session])
 
@@ -940,7 +945,7 @@ export default function SetupPage({ session, today = new Date() }) {
             })}
 
             {/* ── "You might also like" — related-artist recommendations ─── */}
-            {myArtists.length >= 5 && (upcomingRecommendations.length > 0 || recommending) && (
+            {myArtists.length >= 5 && (upcomingRecommendations.length > 0 || recommending || recsSettled) && (
               <div style={{ marginTop: 32 }}>
                 <div style={{
                   ...sectionLabel('#22d3ee'),
@@ -972,6 +977,10 @@ export default function SetupPage({ session, today = new Date() }) {
                       animation: 'fp-pulse 1.5s ease infinite',
                     }} />
                   ))
+                ) : upcomingRecommendations.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--fp-text-dim)' }}>
+                    Recommendations are unavailable right now
+                  </div>
                 ) : upcomingRecommendations.map((f, idx) => {
                   const fac = '#22d3ee'
                   return (
