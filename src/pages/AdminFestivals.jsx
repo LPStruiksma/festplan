@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { T, pillBtn } from '../lib/ui'
-import { listFestivals } from '../lib/admin-api'
+import {
+  listFestivals, discoverFestivalsLive, ingestDiscoveredFestival, notYetIngested,
+} from '../lib/admin-api'
+import { loadArtistsFromCache } from '../lib/profile'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ADMIN FESTIVALS — /admin/festivals
    Lists all festival_meta rows.  Clicking one opens the editor.
+   Below them, festivals discovered on Ticketmaster for the admin's saved
+   artists that are not stored yet, each with a one-click Ingest button.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function AdminFestivals({ session }) {
@@ -42,11 +47,13 @@ function AdminFestivalsContent() {
   const [festivals, setFestivals] = useState(null)   // null = loading
   const [error, setError]         = useState(null)
 
-  useEffect(() => {
+  const reload = useCallback(() =>
     listFestivals()
       .then(setFestivals)
       .catch(e => setError(e.message))
-  }, [])
+  , [])
+
+  useEffect(() => { reload() }, [reload])
 
   // ── Layout ───────────────────────────────────────────────────────────────
   return (
@@ -129,7 +136,115 @@ function AdminFestivalsContent() {
             ))}
           </div>
         )}
+
+        <DiscoveredSection festivals={festivals} onIngested={reload} />
       </div>
+    </div>
+  )
+}
+
+// ── Discovered festivals (one-click ingest) ──────────────────────────────────
+
+function DiscoveredSection({ festivals, onIngested }) {
+  const [discovered, setDiscovered] = useState(null)   // null = not searched
+  const [searching, setSearching]   = useState(false)
+  const [busyId, setBusyId]         = useState(null)
+  const [message, setMessage]       = useState(null)   // { error?: string, text: string }
+
+  async function handleFind() {
+    const artists = loadArtistsFromCache()
+    if (!artists.length) {
+      setMessage({ error: true, text: 'No saved artists yet. Add artists on the setup page first.' })
+      return
+    }
+    setSearching(true)
+    setMessage(null)
+    try {
+      setDiscovered(await discoverFestivalsLive(artists))
+    } catch (e) {
+      setMessage({ error: true, text: `Discovery failed: ${e.message}` })
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  async function handleIngest(f) {
+    setBusyId(f.id)
+    setMessage(null)
+    try {
+      await ingestDiscoveredFestival(f)
+      setMessage({ text: `Ingested ${f.name}.` })
+      await onIngested()
+    } catch (e) {
+      setMessage({ error: true, text: `Ingest of ${f.name} failed: ${e.message}` })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const pending = discovered && festivals ? notYetIngested(discovered, festivals) : []
+
+  return (
+    <div style={{ marginTop: 40 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{
+          flex: 1, fontFamily: T.display, fontSize: 16, fontWeight: 900,
+          color: 'var(--fp-text)', textTransform: 'uppercase', letterSpacing: 1,
+        }}>
+          Discovered on Ticketmaster
+        </div>
+        <button onClick={handleFind} disabled={searching} style={pillBtn(false)}>
+          {searching ? 'Searching…' : 'Find festivals for my artists'}
+        </button>
+      </div>
+
+      {message && (
+        <div style={{
+          padding: '10px 14px', marginBottom: 12, fontSize: 13,
+          borderRadius: 'var(--fp-radius-md)',
+          color: message.error ? '#f44336' : 'var(--fp-text)',
+          border: `1px solid ${message.error ? 'rgba(244,67,54,0.3)' : 'var(--fp-border)'}`,
+        }}>
+          {message.text}
+        </div>
+      )}
+
+      {discovered && pending.length === 0 && (
+        <div style={{ fontSize: 13, color: 'var(--fp-text-mute)' }}>
+          Every discovered festival is already in the database.
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {pending.map(f => (
+            <div key={f.id} style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '12px 18px',
+              background: 'var(--fp-s1)',
+              border: '1px solid var(--fp-border)',
+              borderRadius: 'var(--fp-radius-md)',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--fp-text)' }}>{f.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--fp-text-mute)', marginTop: 2 }}>
+                  {[f.location, f.startDate === f.endDate ? f.startDate : `${f.startDate} → ${f.endDate}`]
+                    .filter(Boolean).join(' · ')}
+                  {` · ${f.tmEventIds.length} event${f.tmEventIds.length !== 1 ? 's' : ''}`}
+                </div>
+              </div>
+              <button
+                onClick={() => handleIngest(f)}
+                disabled={busyId !== null}
+                aria-label={`Ingest ${f.name}`}
+                style={pillBtn(false)}
+              >
+                {busyId === f.id ? 'Ingesting…' : 'Ingest'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
