@@ -21,7 +21,7 @@ vi.mock('../lib/profile', () => ({
   saveArtistsRemote: vi.fn(async () => {}),
 }))
 
-import { fetchAllFestivals, discoverFestivals } from '../lib/api'
+import { fetchAllFestivals, discoverFestivals, recommendFestivals } from '../lib/api'
 import { loadArtistsFromCache, loadArtists } from '../lib/profile'
 import SetupPage from './SetupPage'
 
@@ -113,5 +113,50 @@ describe('SetupPage find mode hides festivals that are over', () => {
 
     expect(await screen.findByText('No upcoming festivals yet')).toBeInTheDocument()
     expect(screen.queryByText('Lowlands 2026')).not.toBeInTheDocument()
+  })
+})
+
+describe('SetupPage "You might also like" recommendations', () => {
+  const FIVE = ['Daft Punk', 'Justice', 'Air', 'Phoenix', 'Cassius']
+  const RECOMMENDED = {
+    ...fest('related', 'Related Fest', '2027-07-01', '2027-07-03'),
+    originalMatchCount: 1, matchDifference: 2, relatedMatchedArtists: ['Kavinsky'],
+  }
+
+  beforeEach(() => {
+    fetchAllFestivals.mockResolvedValue([])
+    loadArtists.mockResolvedValue(FIVE)
+    discoverFestivals.mockResolvedValue({ source: 'fallback', festivals: [] })
+    recommendFestivals.mockReset()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  async function openFind() {
+    renderSetup()
+    fireEvent.click(await screen.findByText(/Find My Festival/))
+  }
+
+  it('shows the recommended festivals when the call returns some', async () => {
+    recommendFestivals.mockResolvedValue([RECOMMENDED])
+    await openFind()
+
+    expect(await screen.findByText('Related Fest')).toBeInTheDocument()
+    expect(screen.getByText('You might also like')).toBeInTheDocument()
+    expect(screen.queryByText('Recommendations are unavailable right now')).not.toBeInTheDocument()
+  })
+
+  it('says recommendations are unavailable when the call errors', async () => {
+    recommendFestivals.mockRejectedValue(new Error('edge function down'))
+    await openFind()
+
+    expect(await screen.findByText('Recommendations are unavailable right now')).toBeInTheDocument()
+    expect(screen.queryByText('Related Fest')).not.toBeInTheDocument()
+  })
+
+  it('says recommendations are unavailable when the call returns nothing', async () => {
+    recommendFestivals.mockResolvedValue([])
+    await openFind()
+
+    expect(await screen.findByText('Recommendations are unavailable right now')).toBeInTheDocument()
   })
 })
