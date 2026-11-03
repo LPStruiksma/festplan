@@ -10,9 +10,9 @@ Every dated or outside thing FestPlan depends on, with its source, when it was l
 
 | Date | What happens | Unit |
 | --- | --- | --- |
-| **already passed** | Spotify Development Mode removed related artists (S2), so "You might also like" has no data; since #38 it says "Recommendations are unavailable right now" instead of vanishing. The playlist builder and playlist import moved to the allowed endpoints in #36 and #37 (rows S1, S6, S11, S12; S3, S7-S9 retired). | festplan#31 unit C |
+| **already passed** | Spotify Development Mode removed related artists (S2); festplan#31 unit C removed "You might also like" and the `recommend-festivals` edge function, since Lukas stays in Development Mode. The playlist builder and playlist import moved to the allowed endpoints in #36 and #37 (rows S1, S6, S11, S12; S3, S7-S9 retired). | festplan#31 |
 | **already passed** | All five seeded editions ended (last: Lowlands, 2026-08-16). Seeding a fresh install shows only past festivals. Glastonbury 2026 is a placeholder (fallow year). | open a unit when the 2027 dates are announced |
-| 2026-12-01 | Monthly recheck of Spotify Web API changes (S1, S2, S4-S6, S10-S12): the changelog moved in 2024-11, 2026-02, 2026-03 and 2026-07. | recurring |
+| 2026-12-01 | Monthly recheck of Spotify Web API changes (S1, S4-S6, S10-S12): the changelog moved in 2024-11, 2026-02, 2026-03 and 2026-07. | recurring |
 | 2027-05-01 | Yearly recheck of Ticketmaster Discovery API (T1-T2) and the Supabase edge runtime imports (R1). | recurring |
 
 ## Festival editions
@@ -44,8 +44,8 @@ Endpoints the code calls at `main` 8fe4ab3:
 
 | # | Endpoint | Used in | Status | Valid until |
 | --- | --- | --- | --- | --- |
-| S1 | `/search` (`type=artist`, `limit=1`; and since #36 `type=track`, `limit=1`) | `recommend-festivals` `searchArtistId`; `SchedulePage.jsx` `createSchedulePlaylist` (one track per artist, replaces S3) | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
-| S2 | `/artists/{id}/related-artists` | `supabase/functions/recommend-festivals/index.ts` `getRelatedArtistNames` | broken (likely): restricted since 2024-11-27 for apps like this one, and stays so under the Development Mode decision. Errors become `[]`; since #38 `SetupPage.jsx` shows "Recommendations are unavailable right now". | passed; festplan#31 unit C replaces or removes it |
+| S1 | `/search` (`type=track`, `limit=1`, since #36; the `type=artist` search left with `recommend-festivals` in festplan#31 unit C) | `SchedulePage.jsx` `createSchedulePlaylist` (one track per artist, replaces S3) | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
+| S2 | `/artists/{id}/related-artists` | none since festplan#31 unit C: the `recommend-festivals` edge function and the Setup page "You might also like" section were removed | not called: unavailable to Development Mode apps (restricted since 2024-11-27), and Lukas chose to stay in Development Mode (festplan#35). Recheck only if the app moves to Extended Quota. | no expiry |
 | S4 | `/me/top/artists` (`limit=50`, `medium_term`) | `src/lib/spotify.js` `getTopArtists` | verify: not in the reported removals; `limit=50` may meet a new cap | 2026-12-01 recheck |
 | S5 | `/me/tracks` (`limit=50`) | `src/lib/spotify.js` `getLikedSongArtists` | verify, as S4 | 2026-12-01 recheck |
 | S6 | `/me/playlists` (GET, `limit=50`) | `src/lib/spotify.js` `getPlaylists` (since #37 reads `items.total`, then the old `tracks.total`, then 0) | verify: endpoint kept, count field reported renamed; the code reads both names | 2026-12-01 recheck |

@@ -205,37 +205,6 @@ export async function discoverFestivals(artists) {
   return { source: 'fallback', festivals }
 }
 
-// ── RECOMMEND FESTIVALS ───────────────────────────────────────────────────────
-// Call the recommend-festivals edge function with the user's Spotify token.
-// Returns festivals whose lineups contain artists *related* to the user's taste
-// but not already in their own list — sorted by net-new related matches.
-//
-// Returns [] on any error so callers can degrade gracefully without
-// breaking the main discover flow.
-
-export async function recommendFestivals(artists, spotifyToken) {
-  if (!spotifyToken || artists.length < 5) return []
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(`${EDGE_FN_BASE}/recommend-festivals`, {
-      method: 'POST',
-      headers: {
-        'Content-Type':    'application/json',
-        'Authorization':   `Bearer ${session?.access_token || ''}`,
-        'apikey':          import.meta.env.VITE_SUPABASE_ANON_KEY,
-        'x-spotify-token': spotifyToken,
-      },
-      body: JSON.stringify({ artists }),
-    })
-    if (!res.ok) return []
-    const { recommendations } = await res.json()
-    return recommendations ?? []
-  } catch (e) {
-    console.warn('recommendFestivals: failed silently:', e.message)
-    return []
-  }
-}
-
 // ── ENSURE FESTIVAL INGESTED ──────────────────────────────────────────────────
 // Called by SetupPage when a user picks a live-discovered festival that isn't
 // already in festival_meta.  Triggers ingest-festival-timetable (multi-day

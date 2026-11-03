@@ -184,3 +184,18 @@ describe('fallbackDiscover', () => {
     expect(result.matchedArtists).toContain('Bicep')
   })
 })
+
+// festplan#31 unit C: the related-artist recommender depended on Spotify's
+// Related Artists endpoint, which Development Mode apps can't call. The edge
+// function and its client were removed rather than left failing.
+describe('recommend-festivals removal', () => {
+  test('api.js has no recommendFestivals client and the edge function is gone', async () => {
+    const { readFileSync, existsSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const root = join(import.meta.dirname, '..', '..')
+    const api = await import('./api.js')
+    expect(api.recommendFestivals).toBeUndefined()
+    expect(readFileSync(join(root, 'src', 'lib', 'api.js'), 'utf8')).not.toContain('recommend-festivals')
+    expect(existsSync(join(root, 'supabase', 'functions', 'recommend-festivals'))).toBe(false)
+  })
+})
