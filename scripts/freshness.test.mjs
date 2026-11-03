@@ -34,9 +34,9 @@ describe('docs/freshness.md', () => {
 
   it('lists every Spotify Web API path the code calls', () => {
     const doc = readInventory()
-    for (const path of ['/search', '/artists/{id}/related-artists', '/artists/{id}/top-tracks',
-      '/me/top/artists', '/me/tracks', '/me/playlists', '/playlists/{id}/tracks',
-      '/users/{user_id}/playlists', '/me', 'accounts.spotify.com/api/token']) {
+    for (const path of ['/search', '/artists/{id}/related-artists',
+      '/me/top/artists', '/me/tracks', '/me/playlists', '/playlists/{id}/items',
+      'accounts.spotify.com/api/token']) {
       expect(doc, path).toContain(`\`${path}\``)
     }
   })
