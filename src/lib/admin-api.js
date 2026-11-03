@@ -119,3 +119,74 @@ export async function upsertSlot(slot) {
 export async function deleteSlot(id) {
   await adminWrite('delete_slot', { id })
 }
+
+// ── DISCOVERED FESTIVALS: one-click ingest (festplan#30) ─────────────────────
+//
+// discover-festivals already returns the Ticketmaster event IDs of every
+// festival it finds (one per festival day).  The admin festivals page lists
+// the ones not yet in festival_meta and ingests them with one click through
+// ingest-festival-timetable, which re-checks that the caller is the admin.
+
+async function callEdgeFunction(name, body) {
+  const headers = await getAuthHeaders()
+  const res = await fetch(`${EDGE_FN_BASE}/${name}`, {
+    method:  'POST',
+    headers,
+    body:    JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
+}
+
+/**
+ * Live Ticketmaster discovery for an artist list.  Unlike discoverFestivals()
+ * in api.js this never falls back to stored data: the admin needs the
+ * festivals that are NOT stored yet, so an error is shown, not hidden.
+ *
+ * @param {string[]} artists
+ * @returns {Promise<Array>} discovered festivals ({ id, name, tmEventIds, ... })
+ */
+export async function discoverFestivalsLive(artists) {
+  const { festivals } = await callEdgeFunction('discover-festivals', { artists })
+  return festivals || []
+}
+
+/**
+ * Discovered festivals that are not in festival_meta yet and can be ingested
+ * (they carry at least one Ticketmaster event ID).
+ *
+ * @param {Array} discovered  festivals from discoverFestivalsLive()
+ * @param {Array} festivals   festival_meta rows from listFestivals()
+ * @returns {Array}
+ */
+export function notYetIngested(discovered, festivals) {
+  const stored = new Set((festivals || []).map(f => f.festival_key))
+  return (discovered || []).filter(f =>
+    !stored.has(f.id) && Array.isArray(f.tmEventIds) && f.tmEventIds.length > 0
+  )
+}
+
+/**
+ * Request body for ingest-festival-timetable.  Always the multi-day shape so
+ * festivalSlug pins the stored key to the discovered id (the two functions
+ * slugify names differently), and every known day is ingested at once.
+ *
+ * @param {{ id: string, tmEventIds: string[] }} festival
+ * @returns {{ eventIds: string[], festivalSlug: string }}
+ */
+export function ingestRequestBody(festival) {
+  return { eventIds: [...festival.tmEventIds], festivalSlug: festival.id }
+}
+
+/**
+ * Ingest a discovered festival's timetable from Ticketmaster.
+ * @param {{ id: string, tmEventIds: string[] }} festival
+ * @returns {Promise<Object>} the function's response ({ ok, festivalKey, ... })
+ */
+export async function ingestDiscoveredFestival(festival) {
+  if (!festival?.tmEventIds?.length) {
+    throw new Error('This festival has no Ticketmaster event ID to ingest')
+  }
+  return callEdgeFunction('ingest-festival-timetable', ingestRequestBody(festival))
+}
