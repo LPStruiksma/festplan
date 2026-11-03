@@ -2,7 +2,7 @@
 
 Every dated or outside thing FestPlan depends on, with its source, when it was last checked and when it may stop holding. Strategy reads the **Valid until** column and opens a unit before the earliest date passes. `scripts/freshness.test.mjs` keeps this file in step with the code: every `scripts/festivals/*.json` file needs a row with its end date, and every Spotify Web API path the code calls needs a row.
 
-- Inventoried: 2026-11-03 at `main` 5c9eedc (festplan#29, autodev#646).
+- Inventoried: 2026-11-03 at `main` 5c9eedc (festplan#29, autodev#646). Spotify rows updated 2026-11-03 at `main` 8fe4ab3 for festplan#31 units A (#36), B (#37), the C minimum (#38) and Lukas's Development Mode decision (#35).
 - Not reachable from the build container on 2026-11-03: `developer.spotify.com`, so Spotify facts below were read through web-search summaries of the official pages and stay `verify` until someone opens them. Ticketmaster facts come from the code comments only.
 - **Status**: `confirmed` (read on the source on the date given), `verify` (not checked on the source), `broken (likely)` (the source says it stopped; not tried against Lukas's app), `own` (this repo's choice).
 
@@ -10,9 +10,9 @@ Every dated or outside thing FestPlan depends on, with its source, when it was l
 
 | Date | What happens | Unit |
 | --- | --- | --- |
-| **already passed** | Spotify Development Mode removed endpoints FestPlan calls: related artists (S2), artist top tracks (S3), playlist creation and tracks (S8, S9), playlist read (S7). Recommendations are empty and the playlist builder fails. | festplan#31 |
+| **already passed** | Spotify Development Mode removed related artists (S2), so "You might also like" has no data; since #38 it says "Recommendations are unavailable right now" instead of vanishing. The playlist builder and playlist import moved to the allowed endpoints in #36 and #37 (rows S1, S6, S11, S12; S3, S7-S9 retired). | festplan#31 unit C |
 | **already passed** | All five seeded editions ended (last: Lowlands, 2026-08-16). Seeding a fresh install shows only past festivals. Glastonbury 2026 is a placeholder (fallow year). | open a unit when the 2027 dates are announced |
-| 2026-12-01 | Monthly recheck of Spotify Web API changes (S1-S10): the changelog moved in 2024-11, 2026-02, 2026-03 and 2026-07. | recurring |
+| 2026-12-01 | Monthly recheck of Spotify Web API changes (S1, S2, S4-S6, S10-S12): the changelog moved in 2024-11, 2026-02, 2026-03 and 2026-07. | recurring |
 | 2027-05-01 | Yearly recheck of Ticketmaster Discovery API (T1-T2) and the Supabase edge runtime imports (R1). | recurring |
 
 ## Festival editions
@@ -33,25 +33,39 @@ Festivals ingested at runtime from Ticketmaster (`festival_meta`, `timetable_slo
 
 App: Lukas's Spotify Client ID used by Supabase Auth (scopes in `src/pages/LoginPage.jsx`: `user-library-read playlist-read-private user-top-read playlist-modify-private`). The repo starts on 2026-05-12, so the Client ID was very likely registered after both cut-offs below, in Development Mode. Confirm in the Spotify Developer Dashboard (creation date, quota mode).
 
-Background, from the official pages as summarised by search on 2026-11-03:
+**Decision (Lukas, 2026-11-03 11:45Z, festplan#35): stay in Development Mode.** No Extended Quota application. Related Artists stays unavailable to FestPlan.
+
+Background, from the official pages as summarised by search on 2026-11-03 (developer.spotify.com was still not reachable from the build container when these rows were updated, so the Spotify facts stay `verify`):
 - 2024-11-27, blog "Introducing some changes to our Web API": Development Mode apps without a pending extension, and every app registered from that day, lose Related Artists, Recommendations, Audio Features/Analysis, featured/category playlists and preview URLs. Extended Quota apps keep them.
 - 2026-02-06, blog "Update on Developer Access and Platform Security" and the "February 2026 Web API Dev Mode Changes" migration guide: new Development Mode Client IDs from 2026-02-11 need a Premium owner, allow at most 5 authorized users and get fewer endpoints; existing ones got the account limits on 2026-03-09 (endpoint changes for them reported postponed). Third-party reports list removed or renamed: artist top tracks, `POST /users/{user_id}/playlists` (now `POST /me/playlists`), `/playlists/{id}/tracks` (now `/playlists/{id}/items`, own or collaborative playlists only), search `limit` capped at 10.
 - 2026-07 changelog: Development Mode quotas counted per developer account.
 
+Endpoints the code calls at `main` 8fe4ab3:
+
 | # | Endpoint | Used in | Status | Valid until |
 | --- | --- | --- | --- | --- |
-| S1 | `/search` (artist, `limit=1`) | `recommend-festivals` `searchArtistId`; `SchedulePage.jsx` playlist builder | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
-| S2 | `/artists/{id}/related-artists` | `supabase/functions/recommend-festivals/index.ts` `getRelatedArtistNames` | broken (likely): restricted since 2024-11-27 for apps like this one. Errors become `[]`, and `SetupPage.jsx` `runRecommendations` hides the section, so users see nothing. | passed; festplan#31 |
-| S3 | `/artists/{id}/top-tracks` | `SchedulePage.jsx` `buildSpotifyPlaylist` | broken (likely): reported removed in the 2026-02 migration. Every URI comes back null, so the toast blames region settings. | passed; festplan#31 |
+| S1 | `/search` (`type=artist`, `limit=1`; and since #36 `type=track`, `limit=1`) | `recommend-festivals` `searchArtistId`; `SchedulePage.jsx` `createSchedulePlaylist` (one track per artist, replaces S3) | verify: still offered; `limit=1` is under the reported cap of 10 | 2026-12-01 recheck |
+| S2 | `/artists/{id}/related-artists` | `supabase/functions/recommend-festivals/index.ts` `getRelatedArtistNames` | broken (likely): restricted since 2024-11-27 for apps like this one, and stays so under the Development Mode decision. Errors become `[]`; since #38 `SetupPage.jsx` shows "Recommendations are unavailable right now". | passed; festplan#31 unit C replaces or removes it |
 | S4 | `/me/top/artists` (`limit=50`, `medium_term`) | `src/lib/spotify.js` `getTopArtists` | verify: not in the reported removals; `limit=50` may meet a new cap | 2026-12-01 recheck |
 | S5 | `/me/tracks` (`limit=50`) | `src/lib/spotify.js` `getLikedSongArtists` | verify, as S4 | 2026-12-01 recheck |
-| S6 | `/me/playlists` (`limit=50`) | `src/lib/spotify.js` `getPlaylists` (reads `tracks.total`) | verify: endpoint kept, the `tracks` field is reported renamed | 2026-12-01 recheck; festplan#31 |
-| S7 | `/playlists/{id}/tracks` (GET) | `src/lib/spotify.js` `getPlaylistArtists` | broken (likely): reported renamed to `/playlists/{id}/items`, own or collaborative playlists only | passed; festplan#31 |
-| S8 | `/users/{user_id}/playlists` (POST) | `SchedulePage.jsx` `buildSpotifyPlaylist` | broken (likely): reported replaced by `POST /me/playlists` | passed; festplan#31 |
-| S9 | `/playlists/{id}/tracks` (POST) | `SchedulePage.jsx` `buildSpotifyPlaylist` | broken (likely), as S7 | passed; festplan#31 |
-| S10 | `/me`, and `accounts.spotify.com/api/token` (refresh grant) | `SchedulePage.jsx`; `supabase/functions/refresh-spotify-token/index.ts` | verify: not in the reported removals | 2026-12-01 recheck |
+| S6 | `/me/playlists` (GET, `limit=50`) | `src/lib/spotify.js` `getPlaylists` (since #37 reads `items.total`, then the old `tracks.total`, then 0) | verify: endpoint kept, count field reported renamed; the code reads both names | 2026-12-01 recheck |
+| S11 | `/playlists/{id}/items` (GET `limit=100`; POST) | GET: `src/lib/spotify.js` `getPlaylistArtists` (since #37, reads `item` then `track`; a 403 says the user can only import playlists they own or collaborate on). POST: `SchedulePage.jsx` `createSchedulePlaylist` (since #36) | verify: the reported replacement for `/playlists/{id}/tracks`; own or collaborative playlists only | 2026-12-01 recheck |
+| S12 | `/me/playlists` (POST) | `SchedulePage.jsx` `createSchedulePlaylist` (since #36; replaces `POST /users/{user_id}/playlists`) | verify: the reported replacement form | 2026-12-01 recheck |
+| S10 | `accounts.spotify.com/api/token` (refresh grant) | `supabase/functions/refresh-spotify-token/index.ts` | verify: not in the reported removals | 2026-12-01 recheck |
 
-Product limit while the app stays in Development Mode: at most 5 Spotify-authorized users, and the app stops if the owner's Premium lapses. Staying there or applying for Extended Quota is Lukas's call (festplan#31 D).
+Retired: FestPlan no longer calls these (kept so the history of each row id stays readable).
+
+| # | Endpoint | Retired by | Replaced with |
+| --- | --- | --- | --- |
+| S3 | `/artists/{id}/top-tracks` | #36 (c40c433) | S1 track search |
+| S7 | `/playlists/{id}/tracks` (GET) | #37 (ce65c7f) | S11 GET |
+| S8 | `/users/{user_id}/playlists` (POST) | #36 (c40c433) | S12 `POST /me/playlists` |
+| S9 | `/playlists/{id}/tracks` (POST) | #36 (c40c433) | S11 POST |
+| S10 (part) | `/me` | #36 (c40c433): the user id was only needed for the old playlist path | none |
+
+Error text since #36: a 403 from the playlist builder says FestPlan's Spotify app is in Development Mode and only accounts the owner approved can build playlists (no more "check your Spotify region settings").
+
+**Product limit (own, from the decision):** while the app stays in Development Mode, at most 5 Spotify-authorized users, each added by Lukas in the Spotify Developer Dashboard, and the app stops if the owner's Spotify Premium lapses. Revisit only if FestPlan needs more than 5 users; that would reopen festplan#35.
 
 ## Ticketmaster Discovery API
 
