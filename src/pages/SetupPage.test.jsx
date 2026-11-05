@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
@@ -205,13 +205,12 @@ describe('SetupPage Plan mode search', () => {
     loadArtists.mockResolvedValue(['Daft Punk'])
     renderSetup()
     await screen.findByText('Next Summer')
-    await screen.findByText('Daft Punk')
     const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
     const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
     const festival = screen.getByRole('button', { name: /Next Summer/i })
 
     fireEvent.click(festival)
-    expect(schedule).toBeEnabled()
+    await waitFor(() => expect(schedule).toBeEnabled())
     fireEvent.click(festival)
     expect(schedule).toBeDisabled()
     fireEvent.click(festival)
