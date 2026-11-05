@@ -36,6 +36,7 @@ export default function SetupPage({ session, today = new Date() }) {
   // All festivals for the Plan mode picker — loaded from Supabase on mount
   const [planFestivals, setPlanFestivals] = useState([])
   const [planLoaded, setPlanLoaded] = useState(false)
+  const [planSearch, setPlanSearch] = useState('')
 
   // Festival comparison — up to 4 IDs selected in Find mode
   const [compareIds, setCompareIds] = useState(new Set())
@@ -224,10 +225,13 @@ export default function SetupPage({ session, today = new Date() }) {
     const fac = f.accentColor || FEST_COLORS[f.id]
     const sel = festId === f.id
     return (
-      <div key={f.id}
+      <button key={f.id} type="button" aria-pressed={sel}
         onClick={() => setFestId(f.id === festId ? null : f.id)}
         style={{
           padding: 16,
+          width: '100%',
+          textAlign: 'left',
+          fontFamily: T.body,
           borderRadius: 'var(--fp-radius-md)',
           cursor: 'pointer',
           border: `1px solid ${sel ? fac : 'var(--fp-border)'}`,
@@ -263,13 +267,28 @@ export default function SetupPage({ session, today = new Date() }) {
         <div style={{ fontSize: 10, color: sel ? fac : 'var(--fp-text-mute)', fontWeight: 500 }}>
           {f.days[0].split(' ')[1]} – {f.days[f.days.length - 1]}
         </div>
-      </div>
+      </button>
     )
   }
 
   // Festivals that are over stay out of "find" and out of the main plan grid.
-  const { upcoming: upcomingPlan, past: pastPlan } = splitPastFestivals(planFestivals, today)
+  const { upcoming: allUpcomingPlan, past: allPastPlan } = splitPastFestivals(planFestivals, today)
+  const searchTerm = planSearch.trim().toLocaleLowerCase()
+  const matchesPlanSearch = f => !searchTerm || [f.name, f.location]
+    .some(value => String(value ?? '').toLocaleLowerCase().includes(searchTerm))
+  const upcomingPlan = allUpcomingPlan.filter(matchesPlanSearch)
+  const pastPlan = allPastPlan.filter(matchesPlanSearch)
   const upcomingDiscovered = discoveredFestivals.filter(f => !isPastFestival(f, today))
+  const morePlanFestivals = upcomingDiscovered.filter(f =>
+    !planFestivals.some(p => p.id === f.id) && f.matchCount > 0
+  )
+  const visibleMorePlanFestivals = morePlanFestivals.filter(matchesPlanSearch)
+  const selectedFestival = planFestivals.find(f => f.id === festId) ||
+    discoveredFestivals.find(f => f.id === festId)
+  const selectionFilteredOut = selectedFestival &&
+    ![...upcomingPlan, ...pastPlan, ...visibleMorePlanFestivals].some(f => f.id === festId)
+  const noMatchingPlan = planLoaded && searchTerm &&
+    !upcomingPlan.length && !pastPlan.length && !visibleMorePlanFestivals.length
   const noUpcomingFound = !discovering && discoveredFestivals.length > 0 && upcomingDiscovered.length === 0
 
   return (
@@ -564,13 +583,47 @@ export default function SetupPage({ session, today = new Date() }) {
 
               <div style={sectionLabel()}>② Choose Your Festival</div>
 
+              <label htmlFor="plan-festival-search" style={{
+                display: 'block',
+                color: 'var(--fp-text-dim)',
+                fontSize: 12,
+                marginBottom: 8,
+              }}>
+                Search festivals by name or location
+              </label>
+              <input
+                id="plan-festival-search"
+                type="search"
+                value={planSearch}
+                onChange={e => setPlanSearch(e.target.value)}
+                placeholder="Search festivals or locations"
+                autoComplete="off"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  background: 'var(--fp-s2)',
+                  color: 'var(--fp-text)',
+                  border: '1px solid var(--fp-border2)',
+                  borderRadius: 'var(--fp-radius-md)',
+                  padding: '12px 14px',
+                  fontSize: 14,
+                  fontFamily: T.body,
+                  marginBottom: 16,
+                }}
+              />
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                 {upcomingPlan.map(planCard)}
               </div>
 
-              {planLoaded && upcomingPlan.length === 0 && (
+              {planLoaded && !searchTerm && allUpcomingPlan.length === 0 && morePlanFestivals.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '4px 0 0' }}>
                   No upcoming festivals yet
+                </p>
+              )}
+              {noMatchingPlan && (
+                <p role="status" style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '4px 0 0' }}>
+                  No festivals match your search
                 </p>
               )}
 
@@ -586,7 +639,7 @@ export default function SetupPage({ session, today = new Date() }) {
               )}
 
               {/* Live-discovered festivals not already in the plan grid (plan mode) */}
-              {upcomingDiscovered.filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0).length > 0 && (
+              {visibleMorePlanFestivals.length > 0 && (
                 <>
                   <div style={{
                     ...sectionLabel('var(--fp-text-dim)'),
@@ -601,8 +654,7 @@ export default function SetupPage({ session, today = new Date() }) {
                     }}>LIVE</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                    {upcomingDiscovered
-                      .filter(f => !planFestivals.some(p => p.id === f.id) && f.matchCount > 0)
+                    {visibleMorePlanFestivals
                       .slice(0, 8)
                       .map(f => {
                         const fac = f.accentColor || '#22d3ee'
@@ -650,6 +702,26 @@ export default function SetupPage({ session, today = new Date() }) {
                       })}
                   </div>
                 </>
+              )}
+
+              {selectionFilteredOut && (
+                <div role="status" style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  flexWrap: 'wrap', gap: 10, marginTop: 16,
+                  color: 'var(--fp-text-dim)', fontSize: 12,
+                }}>
+                  <span>Selected: {selectedFestival.name}</span>
+                  <button type="button" onClick={() => setFestId(null)}
+                    aria-label="Clear festival selection"
+                    style={{
+                      background: 'transparent', color: 'var(--fp-accent)',
+                      border: '1px solid var(--fp-border2)',
+                      borderRadius: 'var(--fp-radius-sm)',
+                      cursor: 'pointer', fontSize: 11, padding: '7px 10px',
+                    }}>
+                    Clear selection
+                  </button>
+                </div>
               )}
             </div>
 
