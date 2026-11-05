@@ -1,0 +1,23 @@
+{
+  "id": "primavera-2027",
+  "name": "Primavera Sound Barcelona 2027",
+  "location": "Barcelona, Spain",
+  "emoji": "🌊",
+  "accentColor": "#ff5577",
+  "startDate": "2027-06-02",
+  "endDate": "2027-06-06",
+  "days": [
+    "Wed Jun 2",
+    "Thu Jun 3",
+    "Fri Jun 4",
+    "Sat Jun 5",
+    "Sun Jun 6"
+  ],
+  "stages": [],
+  "lineup": [],
+  "source": {
+    "url": "https://www.primaverasound.com/en",
+    "checkedOn": "2026-11-05"
+  },
+  "_note": "Official dates only; no verified day/stage/time slots. The current seed-festival.mjs rejects empty lineups, so this file is not yet import-ready."
+}

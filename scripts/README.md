@@ -98,6 +98,20 @@ The JSON file must match the shape used in `src/lib/festivals.js`:
 
 ---
 
+### 2027 date-only edition files
+
+Each 2027 JSON records organiser-confirmed dates with optional top-level provenance:
+
+```json
+{ "source": { "url": "https://official-organiser.example/2027", "checkedOn": "2026-11-05" } }
+```
+
+The `source` object documents the official announcement and check date; it is not stored in Supabase. Every edition uses a distinct `id` so older editions are not overwritten. Coachella's two weekends are separate files because there is a week between them.
+
+**Date-only files are not yet import-ready.** Their `stages` and `lineup` arrays are empty on purpose: never copy old acts, stages, days, or set times into a new edition. The current `seed-festival.mjs` rejects an empty `lineup`. A separate importer change must enable metadata-only seeds before these files can be loaded; do not run the existing script on them. Once supported, production seeding remains Lukas's step (or can be handled through authorised admin ingest). Announced artist lists without verified set details do not become timetable slots.
+
+---
+
 ### Adding a new festival
 
 1. Create a new JSON file in `scripts/festivals/`, e.g. `primavera-2026.json`
