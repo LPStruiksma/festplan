@@ -14,9 +14,9 @@ Both modes are idempotent by festival key. A failed full-lineup insert after del
 
 ### Prerequisites
 
-**1. Apply the festival tables migration**
+**1. Verify schema (owner/operator task)**
 
-The script writes to `festival_meta` and `timetable_slots`. If you haven't applied migration `0002_festival_tables.sql` yet, do it now:
+The script depends on `festival_meta` and `timetable_slots`. If migration `0002_festival_tables.sql` has not been applied, only an authorized operator may apply it:
 
 1. Open your Supabase project → **SQL Editor**
 2. Paste the contents of `supabase/migrations/0002_festival_tables.sql`
@@ -109,7 +109,7 @@ The `source` object documents the official announcement and check date; it is no
 
 1. Create a new JSON file in `scripts/festivals/`, e.g. `primavera-2026.json`
 2. Follow the JSON format above
-3. Run the seed script pointing at your new file
+3. Validate the JSON and, only for an authorized test/staging project, run the seed script pointing at your new file. Production import remains the separate owner step above
 
 The new festival will appear in the Edge Function's `festival_meta` lookup immediately. Once you also populate `timetable_slots` (via the seed script with a full lineup), `hasTimetable` will return `true` for that festival and SchedulePage will switch from lineup-only mode to the full grid/list view.
 
@@ -137,7 +137,7 @@ The new festival will appear in the Edge Function's `festival_meta` lookup immed
 
 ## festivals/
 
-Sample and placeholder JSON files ready to seed.
+Sample, date-only and placeholder JSON files; do not treat placeholders as verified imports.
 
 | File                          | Notes                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------- |
