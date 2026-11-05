@@ -205,10 +205,16 @@ describe('SetupPage Plan mode search', () => {
     loadArtists.mockResolvedValue(['Daft Punk'])
     renderSetup()
     await screen.findByText('Next Summer')
+    await screen.findByText('Daft Punk')
     const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
     const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
+    const festival = screen.getByRole('button', { name: /Next Summer/i })
 
-    fireEvent.click(screen.getByRole('button', { name: /Next Summer/i }))
+    fireEvent.click(festival)
+    expect(schedule).toBeEnabled()
+    fireEvent.click(festival)
+    expect(schedule).toBeDisabled()
+    fireEvent.click(festival)
     expect(schedule).toBeEnabled()
 
     fireEvent.change(search, { target: { value: 'lowlands' } })
