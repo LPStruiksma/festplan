@@ -1,0 +1,21 @@
+{
+  "id": "coachella-2027-w1",
+  "name": "Coachella 2027 — Weekend 1",
+  "location": "Indio, CA",
+  "emoji": "🌵",
+  "accentColor": "#e8c547",
+  "startDate": "2027-04-09",
+  "endDate": "2027-04-11",
+  "days": [
+    "Fri Apr 9",
+    "Sat Apr 10",
+    "Sun Apr 11"
+  ],
+  "stages": [],
+  "lineup": [],
+  "source": {
+    "url": "https://www.goldenvoice.com/festivals/",
+    "checkedOn": "2026-11-05"
+  },
+  "_note": "Official dates only; no verified day/stage/time slots. The current seed-festival.mjs rejects empty lineups, so this file is not yet import-ready."
+}

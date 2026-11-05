@@ -1,0 +1,21 @@
+{
+  "id": "lowlands-2027",
+  "name": "Lowlands 2027",
+  "location": "Biddinghuizen, NL",
+  "emoji": "⛺",
+  "accentColor": "#ff8c42",
+  "startDate": "2027-08-20",
+  "endDate": "2027-08-22",
+  "days": [
+    "Fri Aug 20",
+    "Sat Aug 21",
+    "Sun Aug 22"
+  ],
+  "stages": [],
+  "lineup": [],
+  "source": {
+    "url": "https://lowlands.nl/updates/mega-photo-dump-lowlands-2027/",
+    "checkedOn": "2026-11-05"
+  },
+  "_note": "Official dates only; no verified day/stage/time slots. The current seed-festival.mjs rejects empty lineups, so this file is not yet import-ready."
+}

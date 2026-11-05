@@ -1,0 +1,23 @@
+{
+  "id": "glastonbury-2027",
+  "name": "Glastonbury 2027",
+  "location": "Worthy Farm, Pilton, Somerset, UK",
+  "emoji": "🎸",
+  "accentColor": "#82d96e",
+  "startDate": "2027-06-23",
+  "endDate": "2027-06-27",
+  "days": [
+    "Wed Jun 23",
+    "Thu Jun 24",
+    "Fri Jun 25",
+    "Sat Jun 26",
+    "Sun Jun 27"
+  ],
+  "stages": [],
+  "lineup": [],
+  "source": {
+    "url": "https://glastonburyfestivals.co.uk/info/",
+    "checkedOn": "2026-11-05"
+  },
+  "_note": "Official dates only; no verified day/stage/time slots. The current seed-festival.mjs rejects empty lineups, so this file is not yet import-ready."
+}
