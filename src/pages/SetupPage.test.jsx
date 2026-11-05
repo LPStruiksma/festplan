@@ -146,3 +146,82 @@ describe('SetupPage without related-artist recommendations', () => {
     expect(src).not.toMatch(/recommendFestivals|getValidSpotifyToken/)
   })
 })
+
+
+describe('SetupPage Plan mode search', () => {
+  const AMSTERDAM = { ...UPCOMING, location: 'Amsterdam, Netherlands' }
+  const LOWLANDS = { ...PAST, location: 'Biddinghuizen, Netherlands' }
+
+  beforeEach(() => {
+    fetchAllFestivals.mockResolvedValue([LOWLANDS, RUNNING, AMSTERDAM])
+  })
+
+  it('matches festival names case-insensitively while retaining the past group', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search festivals by name or location/i }), {
+      target: { value: 'lOwLaNdS' },
+    })
+
+    expect(screen.queryByText('Next Summer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Running Fest')).not.toBeInTheDocument()
+    const past = screen.getByText('Past festivals (1)').closest('details')
+    expect(past).not.toHaveAttribute('open')
+    expect(within(past).getByText('Lowlands 2026')).toBeInTheDocument()
+    expect(screen.queryByText('No festivals match your search')).not.toBeInTheDocument()
+  })
+
+  it('matches locations regardless of case and clearing the input restores both groups', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+    const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+
+    fireEvent.change(search, { target: { value: 'AMSTERDAM' } })
+    expect(screen.getByText('Next Summer')).toBeInTheDocument()
+    expect(screen.queryByText('Running Fest')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Past festivals/)).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getByText('Running Fest')).toBeInTheDocument()
+    expect(screen.getByText('Past festivals (1)')).toBeInTheDocument()
+    expect(screen.getByText('Lowlands 2026')).toBeInTheDocument()
+  })
+
+  it('shows a distinct no-match message, not the no-upcoming empty state', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search festivals by name or location/i }), {
+      target: { value: 'not a real festival' },
+    })
+
+    expect(screen.getByText('No festivals match your search')).toBeInTheDocument()
+    expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Past festivals/)).not.toBeInTheDocument()
+  })
+
+  it('keeps a selected festival active when hidden and permits clearing and reselecting', async () => {
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    renderSetup()
+    await screen.findByText('Next Summer')
+    const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+    const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
+
+    fireEvent.click(screen.getByRole('button', { name: /Next Summer/i }))
+    expect(schedule).toBeEnabled()
+
+    fireEvent.change(search, { target: { value: 'lowlands' } })
+    expect(screen.queryByRole('button', { name: /Next Summer/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Selected: Next Summer')).toBeInTheDocument()
+    expect(schedule).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /clear festival selection/i }))
+    expect(schedule).toBeDisabled()
+    fireEvent.change(search, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /Next Summer/i }))
+    expect(schedule).toBeEnabled()
+    fireEvent.click(schedule)
+    expect(localStorage.getItem('festplan_festival')).toBe('next')
+  })
+})
