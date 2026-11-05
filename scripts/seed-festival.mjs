@@ -1,192 +1,222 @@
 #!/usr/bin/env node
 /**
- * scripts/seed-festival.mjs
+ * Seed one festival edition into Supabase.
  *
- * Seed one festival's metadata and timetable slots into Supabase.
- * Idempotent: safe to run multiple times — festival_meta is upserted and
- * timetable_slots are fully replaced (delete + insert) on each run.
+ * A verified date-only edition (empty stages AND lineup) upserts festival_meta
+ * only. Full lineups retain the existing timetable delete + batch-insert replace.
+ * All validation runs before the first database operation.
  *
- * Usage
- * ──────
+ * CLI (operator-controlled; do not run against production without approval):
  *   node --env-file=.env scripts/seed-festival.mjs <path-to-json>
- *
- * Example
- * ───────
- *   node --env-file=.env scripts/seed-festival.mjs scripts/festivals/glastonbury-2025.json
- *
- * Required env vars (.env)
- * ────────────────────────
- *   SUPABASE_URL              – your Supabase project URL (no trailing slash)
- *   SUPABASE_SERVICE_ROLE_KEY – service role key (bypasses Row Level Security)
- *
- * JSON input shape  (same as a single entry in src/lib/festivals.js)
- * ──────────────────
- *   {
- *     "id":        "glastonbury-2025",
- *     "name":      "Glastonbury 2025",
- *     "location":  "Pilton, Somerset, UK",
- *     "emoji":     "🎸",
- *     "accentColor": "#82d96e",          // optional
- *     "startDate": "2025-06-26",         // optional ISO date; enables accurate iCal exports
- *     "endDate":   "2025-06-29",         // optional ISO date
- *     "days":    ["Thu Jun 26", "Fri Jun 27", "Sat Jun 28", "Sun Jun 29"],
- *     "stages":  ["Pyramid Stage", "Other Stage", "West Holts", "Park Stage"],
- *     "lineup":  [
- *       { "artist": "Olivia Rodrigo", "stage": "Pyramid Stage",
- *         "day": 3, "start": "21:30", "end": "23:00" },
- *       ...
- *     ]
- *   }
- *
- * Pre-requisites
- * ──────────────
- *   Run supabase/migrations/0002_festival_tables.sql in your Supabase
- *   SQL Editor before seeding for the first time.
  */
 
 import { readFileSync } from 'node:fs'
-import { resolve }      from 'node:path'
-import { createClient } from '@supabase/supabase-js'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-// ── 1. Validate environment ───────────────────────────────────────────────────
-
-const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/$/, '')  // strip trailing /
-const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('\n❌  Missing env vars.')
-  console.error('    Add the following to your .env file:')
-  console.error('      SUPABASE_URL=https://<project-ref>.supabase.co')
-  console.error('      SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>\n')
-  process.exit(1)
-}
-
-// ── 2. Load & validate JSON ───────────────────────────────────────────────────
-
-const jsonPath = process.argv[2]
-if (!jsonPath) {
-  console.error('\n❌  No JSON file specified.')
-  console.error('    Usage: node --env-file=.env scripts/seed-festival.mjs <path-to-json>\n')
-  process.exit(1)
-}
-
-let festival
-try {
-  festival = JSON.parse(readFileSync(resolve(jsonPath), 'utf8'))
-} catch (err) {
-  console.error(`\n❌  Could not read JSON at "${jsonPath}": ${err.message}\n`)
-  process.exit(1)
-}
-
-// Check required top-level fields
 const REQUIRED = ['id', 'name', 'location', 'days', 'stages', 'lineup']
-const missing  = REQUIRED.filter(k => !(k in festival))
-if (missing.length) {
-  console.error(`\n❌  JSON is missing required field(s): ${missing.join(', ')}\n`)
-  process.exit(1)
-}
-
-if (!Array.isArray(festival.lineup) || festival.lineup.length === 0) {
-  console.error('\n❌  "lineup" must be a non-empty array\n')
-  process.exit(1)
-}
-
-// Validate lineup entries
 const SLOT_FIELDS = ['artist', 'day', 'start', 'end']
-const badSlots = festival.lineup
-  .map((s, i) => ({ i, missing: SLOT_FIELDS.filter(f => !(f in s)) }))
-  .filter(x => x.missing.length > 0)
-
-if (badSlots.length > 0) {
-  for (const { i, missing: m } of badSlots.slice(0, 3)) {
-    console.error(`❌  lineup[${i}] is missing: ${m.join(', ')}`)
-  }
-  if (badSlots.length > 3) console.error(`    … and ${badSlots.length - 3} more`)
-  process.exit(1)
-}
-
-// ── 3. Initialise Supabase (service role — bypasses RLS) ─────────────────────
-
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { persistSession: false },
-})
-
-// ── 4. Seed ───────────────────────────────────────────────────────────────────
-
-const festKey = festival.id
-
-console.log(`\n🎪  Seeding: ${festival.name}`)
-console.log(`    festival_key : ${festKey}`)
-console.log(`    days         : ${festival.days.length} (${festival.days.join(', ')})`)
-console.log(`    stages       : ${festival.stages.length}`)
-console.log(`    lineup slots : ${festival.lineup.length}\n`)
-
-// ── 4a. Upsert festival_meta ─────────────────────────────────────────────────
-
-const metaRow = {
-  festival_key:  festKey,
-  name:          festival.name,
-  location:      festival.location,
-  emoji:         festival.emoji        ?? '🎵',
-  accent_color:  festival.accentColor  ?? null,
-  days:          festival.days,
-  stages:        festival.stages,
-  start_date:    festival.startDate    ?? null,
-  end_date:      festival.endDate      ?? null,
-  updated_at:    new Date().toISOString(),
-}
-
-const { error: metaErr } = await supabase
-  .from('festival_meta')
-  .upsert(metaRow, { onConflict: 'festival_key' })
-
-if (metaErr) {
-  console.error('❌  festival_meta upsert failed:', metaErr.message)
-  process.exit(1)
-}
-
-console.log('✅  festival_meta  — upserted 1 row')
-
-// ── 4b. Replace timetable_slots (delete-then-insert for clean bulk replace) ───
-//
-// Upsert-on-conflict would require a composite unique key across
-// (festival_key, artist, day_index, start_time) which is cumbersome and still
-// doesn't handle removed slots cleanly. Delete + re-insert is idempotent and
-// keeps the table tidy on every run.
-
-const { error: delErr } = await supabase
-  .from('timetable_slots')
-  .delete()
-  .eq('festival_key', festKey)
-
-if (delErr) {
-  console.error('❌  timetable_slots delete failed:', delErr.message)
-  process.exit(1)
-}
-
-const rows = festival.lineup.map(s => ({
-  festival_key: festKey,
-  artist:       s.artist,
-  stage:        s.stage     ?? null,
-  day_index:    s.day,
-  start_time:   s.start,
-  end_time:     s.end,
-}))
-
-// Insert in batches of 200 to stay well within Supabase's payload limits.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const LOCAL_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const BATCH_SIZE = 200
-let inserted = 0
 
-for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-  const batch = rows.slice(i, i + BATCH_SIZE)
-  const { error: insErr } = await supabase.from('timetable_slots').insert(batch)
-  if (insErr) {
-    console.error(`\n❌  timetable_slots insert (batch ${Math.floor(i / BATCH_SIZE) + 1}) failed:`, insErr.message)
-    process.exit(1)
-  }
-  inserted += batch.length
-  process.stdout.write(`\r    Inserting… ${inserted} / ${rows.length} slots`)
+function nonemptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
-console.log(`\n✅  timetable_slots — replaced with ${inserted} rows`)
-console.log(`\n🎉  Done — "${festival.name}" is live in Supabase.\n`)
+function validIsoDate(value) {
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+/**
+ * Validate everything before a service-role client is created or any DB write.
+ * A full lineup can still omit dates for legacy seed compatibility. A date-only
+ * edition must supply both real, ordered ISO calendar dates.
+ */
+export function validateFestival(festival) {
+  if (!festival || typeof festival !== 'object' || Array.isArray(festival)) {
+    throw new Error('Festival JSON must be an object')
+  }
+
+  const missing = REQUIRED.filter(field => !Object.hasOwn(festival, field))
+  if (missing.length) {
+    throw new Error(`JSON is missing required field(s): ${missing.join(', ')}`)
+  }
+
+  for (const field of ['id', 'name', 'location']) {
+    if (!nonemptyString(festival[field])) {
+      throw new Error(`"${field}" must be a non-empty string`)
+    }
+  }
+
+  if (!Array.isArray(festival.days) ||
+      festival.days.length === 0 ||
+      !festival.days.every(nonemptyString)) {
+    throw new Error('"days" must be a non-empty array of calendar-day labels')
+  }
+
+  if (!Array.isArray(festival.stages) ||
+      !festival.stages.every(nonemptyString)) {
+    throw new Error('"stages" must be an array of non-empty stage names')
+  }
+
+  if (!Array.isArray(festival.lineup)) {
+    throw new Error('"lineup" must be an array')
+  }
+
+  const metadataOnly = festival.stages.length === 0 && festival.lineup.length === 0
+  if (!metadataOnly &&
+      (festival.stages.length === 0 || festival.lineup.length === 0)) {
+    throw new Error('Use both empty stages and lineup for metadata-only, or both non-empty for a timetable')
+  }
+
+  if (metadataOnly &&
+      (festival.startDate == null || festival.endDate == null)) {
+    throw new Error('Metadata-only editions require startDate and endDate')
+  }
+
+  for (const field of ['startDate', 'endDate']) {
+    if (festival[field] != null && !validIsoDate(festival[field])) {
+      throw new Error(`"${field}" must be a real YYYY-MM-DD date`)
+    }
+  }
+
+  if (festival.startDate != null &&
+      festival.endDate != null &&
+      festival.startDate > festival.endDate) {
+    throw new Error('startDate must not be later than endDate')
+  }
+
+  // Validate full-lineup slots as a whole before deleting any existing rows.
+  festival.lineup.forEach((slot, i) => {
+    if (!slot || typeof slot !== 'object' || Array.isArray(slot)) {
+      throw new Error(`lineup[${i}] must be an object`)
+    }
+
+    const missingFields = SLOT_FIELDS.filter(field => !Object.hasOwn(slot, field))
+    if (missingFields.length) {
+      throw new Error(`lineup[${i}] is missing: ${missingFields.join(', ')}`)
+    }
+
+    if (!nonemptyString(slot.artist) ||
+        !Number.isInteger(slot.day) ||
+        slot.day < 0 ||
+        slot.day >= festival.days.length ||
+        !LOCAL_TIME.test(slot.start) ||
+        !LOCAL_TIME.test(slot.end) ||
+        (slot.stage != null && !nonemptyString(slot.stage))) {
+      throw new Error(`lineup[${i}] has invalid artist, day, stage or HH:mm time`)
+    }
+  })
+
+  return festival
+}
+
+/**
+ * Injected Supabase-compatible client lets tests assert the exact sequence of
+ * writes with no credentials or network access.
+ */
+export async function seedFestival(input, supabase, {
+  log = console.log,
+  write = chunk => process.stdout.write(chunk),
+} = {}) {
+  const festival = validateFestival(input)
+  const festKey = festival.id
+  const metadataOnly = festival.lineup.length === 0
+
+  log(`\n🎪  Seeding: ${festival.name}`)
+  log(`    festival_key : ${festKey}`)
+  log(`    days         : ${festival.days.length} (${festival.days.join(', ')})`)
+  log(`    stages       : ${festival.stages.length}`)
+  log(`    lineup slots : ${festival.lineup.length}\n`)
+
+  const metaRow = {
+    festival_key: festKey,
+    name: festival.name,
+    location: festival.location,
+    emoji: festival.emoji ?? '🎵',
+    accent_color: festival.accentColor ?? null,
+    days: festival.days,
+    stages: festival.stages,
+    start_date: festival.startDate ?? null,
+    end_date: festival.endDate ?? null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error: metaErr } = await supabase
+    .from('festival_meta')
+    .upsert(metaRow, { onConflict: 'festival_key' })
+
+  if (metaErr) throw new Error(`festival_meta upsert failed: ${metaErr.message}`)
+  log('✅  festival_meta  — upserted 1 row')
+
+  if (metadataOnly) {
+    // Never delete, insert, or even query timetable_slots in this mode.
+    log('✅  timetable_slots — untouched (metadata-only edition)')
+    return { mode: 'metadata-only', inserted: 0 }
+  }
+
+  // Full-lineup mode keeps the existing replace behaviour. Delete scoped to
+  // this edition first; insert valid slots in batches of 200.
+  const { error: delErr } = await supabase
+    .from('timetable_slots')
+    .delete()
+    .eq('festival_key', festKey)
+
+  if (delErr) throw new Error(`timetable_slots delete failed: ${delErr.message}`)
+
+  const rows = festival.lineup.map(slot => ({
+    festival_key: festKey,
+    artist: slot.artist,
+    stage: slot.stage ?? null,
+    day_index: slot.day,
+    start_time: slot.start,
+    end_time: slot.end,
+  }))
+
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error: insErr } = await supabase.from('timetable_slots').insert(batch)
+    if (insErr) {
+      throw new Error(`timetable_slots insert (batch ${Math.floor(i / BATCH_SIZE) + 1}) failed: ${insErr.message}`)
+    }
+    inserted += batch.length
+    write(`\r    Inserting… ${inserted} / ${rows.length} slots`)
+  }
+
+  log(`\n✅  timetable_slots — replaced with ${inserted} rows`)
+  log(`\n🎉  Done — "${festival.name}" is live in Supabase.\n`)
+  return { mode: 'full-lineup', inserted }
+}
+
+async function runCli() {
+  const jsonPath = process.argv[2]
+  if (!jsonPath) {
+    throw new Error('No JSON file specified. Usage: node --env-file=.env scripts/seed-festival.mjs <path-to-json>')
+  }
+
+  const festival = JSON.parse(readFileSync(resolve(jsonPath), 'utf8'))
+  validateFestival(festival)
+
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, '')
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in the operator environment')
+  }
+
+  // Dynamic import keeps pure validation and mock-client tests independent
+  // from service-role credentials and any network connection.
+  const { createClient } = await import('@supabase/supabase-js')
+  const supabase = createClient(url, key, { auth: { persistSession: false } })
+  await seedFestival(festival, supabase)
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await runCli().catch(err => {
+    console.error(`\n❌  ${err.message}\n`)
+    process.exitCode = 1
+  })
+}

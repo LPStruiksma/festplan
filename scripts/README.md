@@ -6,14 +6,17 @@ Utility scripts for the Festplan backend.
 
 ## seed-festival.mjs
 
-Seeds one festival's metadata and timetable into Supabase.
-Idempotent — safe to re-run; existing slots are replaced on each run.
+Seeds one festival edition into Supabase in two modes:
+- **Date-only** (`stages: []`, `lineup: []` and verified `startDate`/`endDate`): upserts **festival_meta only**. Existing `timetable_slots` are never deleted or inserted, even on re-import.
+- **Full lineup** (both arrays non-empty): upserts metadata, then **replaces** only that edition's timetable via delete and batched insert (existing behaviour).
+
+Both modes are idempotent by festival key. A failed full-lineup insert after deletion is not transactional; the operator must plan recovery.
 
 ### Prerequisites
 
-**1. Apply the festival tables migration**
+**1. Verify schema (owner/operator task)**
 
-The script writes to `festival_meta` and `timetable_slots`. If you haven't applied migration `0002_festival_tables.sql` yet, do it now:
+The script depends on `festival_meta` and `timetable_slots`. If migration `0002_festival_tables.sql` has not been applied, only an authorized operator may apply it:
 
 1. Open your Supabase project → **SQL Editor**
 2. Paste the contents of `supabase/migrations/0002_festival_tables.sql`
@@ -47,27 +50,15 @@ The `--env-file` flag requires **Node 20.6 or later**. Check with `node --versio
 node --env-file=.env scripts/seed-festival.mjs <path-to-json>
 ```
 
-**Example — seed the Glastonbury placeholder:**
+**Example for an authorized test/staging project (never production without owner approval):**
 
 ```bash
-node --env-file=.env scripts/seed-festival.mjs scripts/festivals/glastonbury-2026.json
+node --env-file=.env scripts/seed-festival.mjs scripts/festivals/glastonbury-2027.json
 ```
 
-Expected output:
-
-```
-🎪  Seeding: Glastonbury 2026
-    festival_key : glastonbury-2026
-    days         : 4 (Thu Jun 25, Fri Jun 26, Sat Jun 27, Sun Jun 28)
-    stages       : 5
-    lineup slots : 37
-
-✅  festival_meta  — upserted 1 row
-    Inserting… 37 / 37 slots
-✅  timetable_slots — replaced with 37 rows
-
-🎉  Done — "Glastonbury 2026" is live in Supabase.
-```
+Metadata-only output reports that `festival_meta` was upserted and
+`timetable_slots` was **untouched**. A full-lineup run reports the number
+of replaced timetable slots.
 
 ---
 
@@ -108,7 +99,9 @@ Each 2027 JSON records organiser-confirmed dates with optional top-level provena
 
 The `source` object documents the official announcement and check date; it is not stored in Supabase. Every edition uses a distinct `id` so older editions are not overwritten. Coachella's two weekends are separate files because there is a week between them.
 
-**Date-only files are not yet import-ready.** Their `stages` and `lineup` arrays are empty on purpose: never copy old acts, stages, days, or set times into a new edition. The current `seed-festival.mjs` rejects an empty `lineup`. A separate importer change must enable metadata-only seeds before these files can be loaded; do not run the existing script on them. Once supported, production seeding remains Lukas's step (or can be handled through authorised admin ingest). Announced artist lists without verified set details do not become timetable slots.
+**Date-only files are metadata-import ready**, provided they have verified real, ordered `YYYY-MM-DD` dates and non-empty calendar-day labels. Both `stages` and `lineup` must be empty arrays together: malformed, missing or wrong-type arrays and half-empty records are rejected **before any write**. Required identity, name and location must be non-blank strings. For full-lineup mode the script also checks each artist, day index and `HH:mm` time before writing. Never copy old acts, stages, days, or set times into a new edition. Announced artist lists without verified set details do not become timetable slots.
+
+**Owner-only production step:** Lukas/the authorized production operator reviews confirmed source data, target project, backups/recovery and any necessary schema apply, then separately authorizes/runs production seeding. AutoDev agents must not execute production seeding, run `deploy.sh`, use production credentials or apply production DB changes. Merging this PR does **not** approve a production import. The CI tests mock the DB client and require no service-role secrets or network.
 
 ---
 
@@ -116,7 +109,7 @@ The `source` object documents the official announcement and check date; it is no
 
 1. Create a new JSON file in `scripts/festivals/`, e.g. `primavera-2026.json`
 2. Follow the JSON format above
-3. Run the seed script pointing at your new file
+3. Validate the JSON and, only for an authorized test/staging project, run the seed script pointing at your new file. Production import remains the separate owner step above
 
 The new festival will appear in the Edge Function's `festival_meta` lookup immediately. Once you also populate `timetable_slots` (via the seed script with a full lineup), `hasTimetable` will return `true` for that festival and SchedulePage will switch from lineup-only mode to the full grid/list view.
 
@@ -133,6 +126,7 @@ The new festival will appear in the Edge Function's `festival_meta` lookup immed
 | `accentColor`    | `festival_meta`    | `accent_color`  |
 | `days`           | `festival_meta`    | `days`          |
 | `stages`         | `festival_meta`    | `stages`        |
+| `startDate` / `endDate` | `festival_meta` | `start_date` / `end_date` |
 | `lineup[].artist`| `timetable_slots`  | `artist`        |
 | `lineup[].stage` | `timetable_slots`  | `stage`         |
 | `lineup[].day`   | `timetable_slots`  | `day_index`     |
@@ -143,7 +137,7 @@ The new festival will appear in the Edge Function's `festival_meta` lookup immed
 
 ## festivals/
 
-Sample and placeholder JSON files ready to seed.
+Sample, date-only and placeholder JSON files; do not treat placeholders as verified imports.
 
 | File                          | Notes                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------- |
