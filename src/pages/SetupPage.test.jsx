@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
@@ -144,5 +144,159 @@ describe('SetupPage without related-artist recommendations', () => {
   it('no longer asks for a Spotify token on the Setup page', () => {
     const src = readFileSync(join(import.meta.dirname, 'SetupPage.jsx'), 'utf8')
     expect(src).not.toMatch(/recommendFestivals|getValidSpotifyToken/)
+  })
+})
+
+
+describe('SetupPage Plan mode search', () => {
+  const AMSTERDAM = { ...UPCOMING, location: 'Amsterdam, Netherlands' }
+  const LOWLANDS = { ...PAST, location: 'Biddinghuizen, Netherlands' }
+
+  beforeEach(() => {
+    fetchAllFestivals.mockResolvedValue([LOWLANDS, RUNNING, AMSTERDAM])
+  })
+
+  it('matches festival names case-insensitively while retaining the past group', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search festivals by name or location/i }), {
+      target: { value: 'lOwLaNdS' },
+    })
+
+    expect(screen.queryByText('Next Summer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Running Fest')).not.toBeInTheDocument()
+    const past = screen.getByText('Past festivals (1)').closest('details')
+    expect(past).not.toHaveAttribute('open')
+    expect(within(past).getByText('Lowlands 2026')).toBeInTheDocument()
+    expect(screen.queryByText('No festivals match your search')).not.toBeInTheDocument()
+  })
+
+  it('matches locations regardless of case and clearing the input restores both groups', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+    const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+
+    fireEvent.change(search, { target: { value: 'AMSTERDAM' } })
+    expect(screen.getByText('Next Summer')).toBeInTheDocument()
+    expect(screen.queryByText('Running Fest')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Past festivals/)).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getByText('Running Fest')).toBeInTheDocument()
+    expect(screen.getByText('Past festivals (1)')).toBeInTheDocument()
+    expect(screen.getByText('Lowlands 2026')).toBeInTheDocument()
+  })
+
+  it('shows a distinct no-match message, not the no-upcoming empty state', async () => {
+    renderSetup()
+    await screen.findByText('Next Summer')
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search festivals by name or location/i }), {
+      target: { value: 'not a real festival' },
+    })
+
+    expect(screen.getByText('No festivals match your search')).toBeInTheDocument()
+    expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Past festivals/)).not.toBeInTheDocument()
+  })
+
+  it('keeps a selected festival active when hidden and permits clearing and reselecting', async () => {
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    renderSetup()
+    await screen.findByText('Next Summer')
+    const search = screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+    const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
+    const festival = screen.getByRole('button', { name: /Next Summer/i })
+
+    fireEvent.click(festival)
+    await waitFor(() => expect(schedule).toBeEnabled())
+    fireEvent.click(festival)
+    expect(schedule).toBeDisabled()
+    fireEvent.click(festival)
+    expect(schedule).toBeEnabled()
+
+    fireEvent.change(search, { target: { value: 'lowlands' } })
+    expect(screen.queryByRole('button', { name: /Next Summer/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Selected: Next Summer')).toBeInTheDocument()
+    expect(schedule).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /clear festival selection/i }))
+    expect(schedule).toBeDisabled()
+    fireEvent.change(search, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /Next Summer/i }))
+    expect(schedule).toBeEnabled()
+    fireEvent.click(schedule)
+    expect(localStorage.getItem('festplan_festival')).toBe('next')
+  })
+})
+
+describe('SetupPage supplemental live festival cards', () => {
+  const liveFestivals = Array.from({ length: 9 }, (_, index) => ({
+    ...fest(`live-${index + 1}`, `Live Festival ${String(index + 1).padStart(2, '0')}`, '2027-07-01', '2027-07-03'),
+    location: 'Utrecht, Netherlands',
+    matchCount: 1,
+    matchedArtists: ['Daft Punk'],
+    lineup: [],
+    hasTimetable: true,
+  }))
+
+  beforeEach(() => {
+    fetchAllFestivals.mockResolvedValue([UPCOMING])
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    discoverFestivals.mockResolvedValue({ source: 'live', festivals: liveFestivals })
+  })
+
+  async function discoverThenPlan() {
+    renderSetup()
+    fireEvent.click(await screen.findByRole('button', { name: /Find My Festival/i }))
+    await screen.findByText('Live Festival 09')
+    fireEvent.click(screen.getByRole('button', { name: /Plan a Festival/i }))
+    return screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+  }
+
+  it('exposes live cards as focusable, keyboard-activatable toggle buttons', async () => {
+    const search = await discoverThenPlan()
+    fireEvent.change(search, { target: { value: 'Live Festival 09' } })
+
+    const liveCard = screen.getByRole('button', { name: /Live Festival 09/i })
+    expect(liveCard).toHaveAttribute('type', 'button')
+    expect(liveCard).toHaveAttribute('aria-pressed', 'false')
+    liveCard.focus()
+    expect(liveCard).toHaveFocus()
+
+    // jsdom does not implement the browser default Enter-to-click action.
+    // Dispatch the key, then its native button click activation separately.
+    fireEvent.keyDown(liveCard, { key: 'Enter', code: 'Enter' })
+    fireEvent.click(liveCard)
+    fireEvent.keyUp(liveCard, { key: 'Enter', code: 'Enter' })
+    expect(liveCard).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Build My Schedule/i })).toBeEnabled()
+
+    fireEvent.keyDown(liveCard, { key: ' ', code: 'Space' })
+    fireEvent.keyUp(liveCard, { key: ' ', code: 'Space' })
+    fireEvent.click(liveCard)
+    expect(liveCard).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /Build My Schedule/i })).toBeDisabled()
+  })
+
+  it('keeps Clear selection available when the selected ninth live result is beyond the rendered cap', async () => {
+    const search = await discoverThenPlan()
+    fireEvent.change(search, { target: { value: 'Live Festival 09' } })
+    fireEvent.click(screen.getByRole('button', { name: /Live Festival 09/i }))
+
+    const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
+    expect(schedule).toBeEnabled()
+    fireEvent.change(search, { target: { value: 'UTRECHT' } })
+
+    expect(screen.getAllByRole('button', { name: /Live Festival 0[1-8]/i })).toHaveLength(8)
+    expect(screen.queryByRole('button', { name: /Live Festival 09/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Selected: Live Festival 09')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /clear festival selection/i })).toBeVisible()
+    expect(schedule).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /clear festival selection/i }))
+    expect(schedule).toBeDisabled()
+    expect(screen.queryByText('Selected: Live Festival 09')).not.toBeInTheDocument()
   })
 })
