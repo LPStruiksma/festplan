@@ -27,7 +27,6 @@ Seed files read by `scripts/seed-festival.mjs`. **Valid until** is the edition's
 | F3 | `bestkeptsecret-2026.json` | Best Kept Secret, Hilvarenbeek, 2026-06-11 to 2026-06-13 | file, no source URL | verify | 2026-06-13 (passed) |
 | F4 | `glastonbury-2026.json` | Glastonbury 2026, 2026-06-25 to 2026-06-28; the file's `_note` says 2026 is a fallow year and the lineup is 2025 placeholder data | file `_note` | own placeholder | 2026-06-28 (passed); replace when the 2027 lineup is out |
 | F5 | `lowlands-2026.json` | Lowlands, Biddinghuizen, 2026-08-13 to 2026-08-16 | file, no source URL | verify | 2026-08-16 (passed) |
-
 | F6 | `bestkeptsecret-2027.json` | Best Kept Secret 2027, 2027-06-11 to 2027-06-13 | [organiser](https://www.bestkeptsecret.nl/news/best-kept-secret-2027), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-06-13 |
 | F7 | `coachella-2027.json` | Coachella 2027 — Weekend 1, 2027-04-09 to 2027-04-11 | [organiser](https://www.goldenvoice.com/festivals/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-04-11 |
 | F8 | `coachella-weekend2-2027.json` | Coachella 2027 — Weekend 2, 2027-04-16 to 2027-04-18 | [organiser](https://www.goldenvoice.com/festivals/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-04-18 |

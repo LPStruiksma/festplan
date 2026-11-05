@@ -103,7 +103,7 @@ The JSON file must match the shape used in `src/lib/festivals.js`:
 Each 2027 JSON records organiser-confirmed dates with optional top-level provenance:
 
 ```json
-"source": { "url": "https://official-organiser.example/2027", "checkedOn": "2026-11-05" }
+{ "source": { "url": "https://official-organiser.example/2027", "checkedOn": "2026-11-05" } }
 ```
 
 The `source` object documents the official announcement and check date; it is not stored in Supabase. Every edition uses a distinct `id` so older editions are not overwritten. Coachella's two weekends are separate files because there is a week between them.
