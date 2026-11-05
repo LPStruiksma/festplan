@@ -142,6 +142,8 @@ describe('seed-festival metadata-only imports', () => {
     ['reversed date range', dateOnly({ startDate: '2027-06-28' })],
     ['bad full-lineup entry', fullLineup({ lineup: [{ artist: 'A', day: 0, start: '21:00' }] })],
     ['wrong full-lineup day', fullLineup({ lineup: [{ artist: 'A', day: 22, start: '21:00', end: '22:00' }] })],
+    ['invalid stage list entry', fullLineup({ stages: [''] })],
+    ['invalid full-lineup time', fullLineup({ lineup: [{ artist: 'A', day: 1, start: '25:00', end: '22:00' }] })],
   ])('rejects %s before writing any table', async (_name, input) => {
     const db = fakeDatabase()
     await expect(seedFestival(input, db, silent)).rejects.toThrow()
