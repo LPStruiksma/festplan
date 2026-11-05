@@ -169,6 +169,7 @@ export default function ComparePage() {
   const [error,     setError]     = useState(null)
   const [festivals, setFestivals] = useState([])  // enriched festival objects
   const [retrying,  setRetrying]  = useState(new Set())  // IDs currently being re-fetched
+  const [artistFilter, setArtistFilter] = useState('all')
 
   const myArtists = readMyArtists()
 
@@ -244,6 +245,16 @@ export default function ComparePage() {
   const allMatchedArtists = myArtists
     .filter(artist => festivals.some(f => f.matchedSlots.has(norm(artist))))
     .sort((a, b) => a.localeCompare(b))
+
+  // Count only successful festival columns. Recalculate after a failed load is retried.
+  const filteredArtists = allMatchedArtists.filter(artist => {
+    if (artistFilter === 'all') return true
+    const artistKey = norm(artist)
+    const appearances = festivals.filter(f =>
+      !f.error && (f.matchedSlots.get(artistKey)?.length ?? 0) > 0
+    ).length
+    return artistFilter === 'shared' ? appearances >= 2 : appearances === 1
+  })
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
@@ -362,20 +373,42 @@ export default function ComparePage() {
         </div>
 
         {/* ── Comparison table ── */}
-        {allMatchedArtists.length === 0 ? (
-          <div style={{
-            background:   'var(--fp-card)',
-            border:       '1px solid var(--fp-border)',
-            borderRadius: 'var(--fp-radius-lg)',
-            padding:      '40px 28px',
-            textAlign:    'center',
-            color:        'var(--fp-text-mute)',
-            fontFamily:   T.body,
-            fontSize:     13,
+        <fieldset style={{
+          border: 0, padding: 0, margin: '0 0 16px', fontFamily: T.body,
+        }}>
+          <legend style={{
+            color: 'var(--fp-text-mute)', fontSize: 11, fontWeight: 700,
+            letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
           }}>
-            None of your saved artists appear in these festivals.
+            Filter saved artists
+          </legend>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {[
+              { value: 'all', label: 'All' },
+              { value: 'shared', label: 'Shared' },
+              { value: 'exclusive', label: 'Exclusive' },
+            ].map(option => (
+              <label key={option.value} style={{
+                ...pillBtn(artistFilter === option.value),
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                cursor: 'pointer',
+              }}>
+                <input
+                  type="radio"
+                  name="artist-coverage"
+                  value={option.value}
+                  checked={artistFilter === option.value}
+                  onChange={() => setArtistFilter(option.value)}
+                />
+                {option.label}
+              </label>
+            ))}
           </div>
-        ) : (
+          <div style={{ fontSize: 11, color: 'var(--fp-text-mute)', marginTop: 8 }}>
+            Shared: at least two loaded festivals · Exclusive: exactly one loaded festival
+          </div>
+        </fieldset>
+
           <div style={{
             background:   'var(--fp-card)',
             border:       '1px solid var(--fp-border)',
@@ -490,7 +523,18 @@ export default function ComparePage() {
 
                 {/* Artist rows */}
                 <tbody>
-                  {allMatchedArtists.map((artist, rowIdx) => {
+                  {filteredArtists.length === 0 ? (
+                    <tr>
+                      <td colSpan={festivals.length + 1} style={{
+                        ...tdBase, textAlign: 'center', padding: '28px 16px',
+                        color: 'var(--fp-text-mute)',
+                      }}>
+                        {allMatchedArtists.length === 0
+                          ? 'None of your saved artists appear in these festivals.'
+                          : `No saved artists match the ${artistFilter === 'shared' ? 'Shared' : 'Exclusive'} filter.`}
+                      </td>
+                    </tr>
+                  ) : filteredArtists.map((artist, rowIdx) => {
                     const normArtist = norm(artist)
                     const isEven     = rowIdx % 2 === 0
 
@@ -613,13 +657,12 @@ export default function ComparePage() {
               textTransform: 'uppercase',
               background: 'var(--fp-s1)',
             }}>
-              {allMatchedArtists.length} matched artist{allMatchedArtists.length !== 1 ? 's' : ''} shown
+              <span>{filteredArtists.length} matched artist{filteredArtists.length !== 1 ? 's' : ''} shown</span>
               {myArtists.length > allMatchedArtists.length && (
                 <> · {myArtists.length - allMatchedArtists.length} of your artists don't play any of these festivals</>
               )}
             </div>
           </div>
-        )}
       </div>
     </div>
   )
