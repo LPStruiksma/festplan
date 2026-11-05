@@ -34,6 +34,10 @@ export default function MyScheduleTab({
   friends, allParticipants, finalSchedule,
 }) {
   const isMobile = useIsMobile()
+  // Keep the local focus preference across day changes; SchedulePage already
+  // supplies the conflict-resolved selection for the current day.
+  const [picksOnly, setPicksOnly] = React.useState(false)
+  const visibleLineup = picksOnly ? dayMatched : dayLineup
 
   return (
     <>
@@ -56,8 +60,9 @@ export default function MyScheduleTab({
               textTransform: 'uppercase', color: fa, marginBottom: 2,
             }}>Timetable Coming Soon</div>
             <div style={{ fontSize: 12, color: 'var(--fp-text-dim)' }}>
-              The full stage schedule hasn't been published yet. Your matched artists are listed
-              below — ratings and group matching already work.
+              The full stage schedule hasn't been published yet. {picksOnly
+                ? 'Your matched artists are listed below'
+                : 'The announced lineup is listed below'} — ratings and group matching already work.
             </div>
           </div>
         </div>
@@ -84,8 +89,33 @@ export default function MyScheduleTab({
         </div>
       )}
 
-      {/* Empty state */}
-      {dayMatched.length === 0 && (
+      {/* The focus mode is local to this tab, not a change to saved picks. */}
+      <div role="group" aria-label="Schedule acts filter" style={{
+        display: 'flex', gap: 3, width: 'fit-content', maxWidth: '100%',
+        flexWrap: 'wrap',
+        background: 'var(--fp-s2)', border: '1px solid var(--fp-border)',
+        borderRadius: 'var(--fp-radius-md)', padding: 3, marginBottom: 16,
+      }}>
+        {[
+          { label: 'All acts', value: false },
+          { label: 'My picks only', value: true },
+        ].map(({ label, value }) => (
+          <button key={label} type="button" aria-pressed={picksOnly === value}
+            onClick={() => setPicksOnly(value)}
+            style={{
+              minHeight: 44, padding: '8px 14px',
+              borderRadius: 'var(--fp-radius-sm)', border: 'none',
+              cursor: 'pointer', fontFamily: T.body, fontSize: 11,
+              fontWeight: 800, letterSpacing: 0.6,
+              background: picksOnly === value ? fa : 'transparent',
+              color: picksOnly === value ? '#000' : 'var(--fp-text-dim)',
+            }}
+          >{label}</button>
+        ))}
+      </div>
+
+      {/* No picks is different from an empty published lineup. */}
+      {(dayLineup.length === 0 || dayMatched.length === 0) && (
         <div style={{
           textAlign: 'center', padding: '52px 20px',
           color: 'var(--fp-text-mute)',
@@ -96,17 +126,21 @@ export default function MyScheduleTab({
             fontFamily: T.body,
             fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
           }}>
-            {isLineupOnly
-              ? 'None of your artists are on this lineup.'
-              : 'None of your artists play on this day.'}
+            {dayLineup.length === 0
+              ? (isLineupOnly
+                  ? 'No acts have been announced for this lineup yet.'
+                  : 'No acts are scheduled for this day yet.')
+              : (isLineupOnly
+                  ? 'None of your artists are on this lineup.'
+                  : 'None of your artists play on this day.')}
           </div>
         </div>
       )}
 
       {/* Lineup-only: always list view; mobile: always list view; timetable: honour viewMode */}
-      {(isLineupOnly || viewMode === 'list' || isMobile)
+      {visibleLineup.length > 0 && ((isLineupOnly || viewMode === 'list' || isMobile)
         ? <ListView
-            dayLineup={dayLineup}
+            dayLineup={visibleLineup}
             myArtists={myArtists}
             fa={fa}
             ratings={ratings}
@@ -114,12 +148,12 @@ export default function MyScheduleTab({
             groupPeople={friends.length > 0 ? allParticipants : null}
           />
         : <GridView
-            dayLineup={dayLineup}
+            dayLineup={visibleLineup}
             stages={fest.stages}
             myArtists={myArtists}
             fa={fa}
           />
-      }
+      )}
 
       {dayMatched.length > 0 && (
         <p style={{

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react'
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { norm, overlaps } from '../../lib/festivals'
 import MyScheduleTab from './MyScheduleTab'
 
@@ -225,7 +225,9 @@ describe('computeFinalSchedule', () => {
 
 // useIsMobile touches window.innerWidth — stub it so tests don't depend on
 // jsdom's viewport size.
-vi.mock('../../lib/use-is-mobile', () => ({ useIsMobile: () => false }))
+const viewport = vi.hoisted(() => ({ mobile: false }))
+vi.mock('../../lib/use-is-mobile', () => ({ useIsMobile: () => viewport.mobile }))
+afterEach(() => { viewport.mobile = false })
 
 const FEST = {
   id: 'test-fest',
@@ -255,8 +257,8 @@ const baseProps = {
 
 describe('MyScheduleTab rendering', () => {
   test('renders without crashing when there are no matched slots', () => {
-    render(<MyScheduleTab {...baseProps} />)
-    // Empty-state message should appear
+    render(<MyScheduleTab {...baseProps} dayLineup={[slot('Gorillaz', '20:00', '21:00')]} />)
+    // Non-empty lineup without picks still has the no-picks message
     expect(screen.getByText(/None of your artists play on this day/i)).toBeInTheDocument()
   })
 
@@ -287,5 +289,110 @@ describe('MyScheduleTab rendering', () => {
     render(<MyScheduleTab {...baseProps} dayMatched={dayMatched} dayLineup={dayMatched} />)
     expect(screen.getByText('Radiohead')).toBeInTheDocument()
     expect(screen.queryByText('Bicep')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('MyScheduleTab focus filter', () => {
+  const fullDay = [
+    slot('Radiohead', '21:00', '22:30'),
+    slot('Bicep', '21:30', '23:00'), // picked, but lost the resolved conflict
+    slot('Gorillaz', '18:00', '19:00'), // not picked
+  ]
+  const chosen = [fullDay[0]]
+  const props = {
+    ...baseProps,
+    dayLineup: fullDay,
+    dayMatched: chosen,
+    myArtists: ['Radiohead', 'Bicep'],
+    finalSchedule: chosen,
+  }
+
+  test('defaults to showing all acts, including non-picks and conflict losers', () => {
+    render(<MyScheduleTab {...props} />)
+    expect(screen.getByRole('button', { name: 'All acts' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Radiohead')).toBeInTheDocument()
+    expect(screen.getByText('Bicep')).toBeInTheDocument()
+    expect(screen.getByText('Gorillaz')).toBeInTheDocument()
+  })
+
+  test('focused list only shows conflict-resolved slots, then restores all acts', () => {
+    render(<MyScheduleTab {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Radiohead')).toBeInTheDocument()
+    expect(screen.queryByText('Bicep')).not.toBeInTheDocument()
+    expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'All acts' }))
+    expect(screen.getByText('Bicep')).toBeInTheDocument()
+    expect(screen.getByText('Gorillaz')).toBeInTheDocument()
+  })
+
+  test('grid mode hides both unpicked acts and resolved conflict losers', () => {
+    render(<MyScheduleTab {...props} viewMode="grid" />)
+    expect(screen.getByText('Bicep')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('Radiohead')).toBeInTheDocument()
+    expect(screen.queryByText('Bicep')).not.toBeInTheDocument()
+    expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
+  })
+
+  test('mobile honors focused filtering while showing list view in grid mode', () => {
+    viewport.mobile = true
+    render(<MyScheduleTab {...props} viewMode="grid" />)
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('Radiohead')).toBeInTheDocument()
+    expect(screen.getByText('Your Pick')).toBeInTheDocument() // ListView, not GridView
+    expect(screen.queryByText('Bicep')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Grid/i })).not.toBeInTheDocument()
+  })
+
+  test('shows no-picks feedback for a populated day without chosen slots', () => {
+    render(<MyScheduleTab {...props} dayMatched={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('None of your artists play on this day.')).toBeInTheDocument()
+    expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'All acts' }))
+    expect(screen.getByText('Gorillaz')).toBeInTheDocument()
+  })
+
+  test('distinguishes a day without any announced acts from a day without picks', () => {
+    render(<MyScheduleTab {...baseProps} />)
+    expect(screen.getByText('No acts are scheduled for this day yet.')).toBeInTheDocument()
+    expect(screen.queryByText('None of your artists play on this day.')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('No acts are scheduled for this day yet.')).toBeInTheDocument()
+  })
+
+  test('lineup-only festivals filter picks and distinguish an empty lineup', () => {
+    const lineup = [
+      slot('The xx', null, null),
+      slot('Gorillaz', null, null),
+    ]
+    const { rerender } = render(<MyScheduleTab {...baseProps} isLineupOnly dayLineup={lineup}
+      dayMatched={[lineup[0]]} myArtists={['The xx']} />)
+    expect(screen.getByText('Gorillaz')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('The xx')).toBeInTheDocument()
+    expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
+    rerender(<MyScheduleTab {...baseProps} isLineupOnly dayLineup={[]} dayMatched={[]} />)
+    expect(screen.getByText('No acts have been announced for this lineup yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('keeps the focus setting when the selected day changes', () => {
+    const { rerender } = render(<MyScheduleTab {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    const secondDay = [
+      slot('The Cure', '19:00', '20:00', 1),
+      slot('Gorillaz', '21:00', '22:00', 1),
+    ]
+    rerender(<MyScheduleTab {...props} day={1} dayLineup={secondDay}
+      dayMatched={[secondDay[0]]} myArtists={['The Cure']} />)
+    expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('The Cure')).toBeInTheDocument()
+    expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
   })
 })
