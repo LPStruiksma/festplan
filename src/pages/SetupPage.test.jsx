@@ -230,3 +230,73 @@ describe('SetupPage Plan mode search', () => {
     expect(localStorage.getItem('festplan_festival')).toBe('next')
   })
 })
+
+describe('SetupPage supplemental live festival cards', () => {
+  const liveFestivals = Array.from({ length: 9 }, (_, index) => ({
+    ...fest(`live-${index + 1}`, `Live Festival ${String(index + 1).padStart(2, '0')}`, '2027-07-01', '2027-07-03'),
+    location: 'Utrecht, Netherlands',
+    matchCount: 1,
+    matchedArtists: ['Daft Punk'],
+    lineup: [],
+    hasTimetable: true,
+  }))
+
+  beforeEach(() => {
+    fetchAllFestivals.mockResolvedValue([UPCOMING])
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    discoverFestivals.mockResolvedValue({ source: 'live', festivals: liveFestivals })
+  })
+
+  async function discoverThenPlan() {
+    renderSetup()
+    fireEvent.click(await screen.findByRole('button', { name: /Find My Festival/i }))
+    await screen.findByText('Live Festival 09')
+    fireEvent.click(screen.getByRole('button', { name: /Plan a Festival/i }))
+    return screen.getByRole('searchbox', { name: /search festivals by name or location/i })
+  }
+
+  it('exposes live cards as focusable, keyboard-activatable toggle buttons', async () => {
+    const search = await discoverThenPlan()
+    fireEvent.change(search, { target: { value: 'Live Festival 09' } })
+
+    const liveCard = screen.getByRole('button', { name: /Live Festival 09/i })
+    expect(liveCard).toHaveAttribute('type', 'button')
+    expect(liveCard).toHaveAttribute('aria-pressed', 'false')
+    liveCard.focus()
+    expect(liveCard).toHaveFocus()
+
+    // jsdom does not implement the browser default Enter-to-click action.
+    // Dispatch the key, then its native button click activation separately.
+    fireEvent.keyDown(liveCard, { key: 'Enter', code: 'Enter' })
+    fireEvent.click(liveCard)
+    fireEvent.keyUp(liveCard, { key: 'Enter', code: 'Enter' })
+    expect(liveCard).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Build My Schedule/i })).toBeEnabled()
+
+    fireEvent.keyDown(liveCard, { key: ' ', code: 'Space' })
+    fireEvent.keyUp(liveCard, { key: ' ', code: 'Space' })
+    fireEvent.click(liveCard)
+    expect(liveCard).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /Build My Schedule/i })).toBeDisabled()
+  })
+
+  it('keeps Clear selection available when the selected ninth live result is beyond the rendered cap', async () => {
+    const search = await discoverThenPlan()
+    fireEvent.change(search, { target: { value: 'Live Festival 09' } })
+    fireEvent.click(screen.getByRole('button', { name: /Live Festival 09/i }))
+
+    const schedule = screen.getByRole('button', { name: /Build My Schedule/i })
+    expect(schedule).toBeEnabled()
+    fireEvent.change(search, { target: { value: 'UTRECHT' } })
+
+    expect(screen.getAllByRole('button', { name: /Live Festival 0[1-8]/i })).toHaveLength(8)
+    expect(screen.queryByRole('button', { name: /Live Festival 09/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Selected: Live Festival 09')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /clear festival selection/i })).toBeVisible()
+    expect(schedule).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /clear festival selection/i }))
+    expect(schedule).toBeDisabled()
+    expect(screen.queryByText('Selected: Live Festival 09')).not.toBeInTheDocument()
+  })
+})

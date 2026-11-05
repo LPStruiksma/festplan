@@ -283,10 +283,12 @@ export default function SetupPage({ session, today = new Date() }) {
     !planFestivals.some(p => p.id === f.id) && f.matchCount > 0
   )
   const visibleMorePlanFestivals = morePlanFestivals.filter(matchesPlanSearch)
+  // Visibility must match the cards actually painted under the eight-result cap.
+  const renderedMorePlanFestivals = visibleMorePlanFestivals.slice(0, 8)
   const selectedFestival = planFestivals.find(f => f.id === festId) ||
     discoveredFestivals.find(f => f.id === festId)
   const selectionFilteredOut = selectedFestival &&
-    ![...upcomingPlan, ...pastPlan, ...visibleMorePlanFestivals].some(f => f.id === festId)
+    ![...upcomingPlan, ...pastPlan, ...renderedMorePlanFestivals].some(f => f.id === festId)
   const noMatchingPlan = planLoaded && searchTerm &&
     !upcomingPlan.length && !pastPlan.length && !visibleMorePlanFestivals.length
   const noUpcomingFound = !discovering && discoveredFestivals.length > 0 && upcomingDiscovered.length === 0
@@ -654,16 +656,17 @@ export default function SetupPage({ session, today = new Date() }) {
                     }}>LIVE</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                    {visibleMorePlanFestivals
-                      .slice(0, 8)
-                      .map(f => {
+                    {renderedMorePlanFestivals.map(f => {
                         const fac = f.accentColor || '#22d3ee'
                         const sel = festId === f.id
                         return (
-                          <div key={f.id}
+                          <button key={f.id} type="button" aria-pressed={sel}
                             onClick={() => setFestId(f.id === festId ? null : f.id)}
                             style={{
                               padding: 16,
+                              width: '100%',
+                              textAlign: 'left',
+                              fontFamily: T.body,
                               borderRadius: 'var(--fp-radius-md)',
                               cursor: 'pointer',
                               border: `1px solid ${sel ? fac : 'var(--fp-border)'}`,
@@ -697,7 +700,7 @@ export default function SetupPage({ session, today = new Date() }) {
                                 Timetable coming soon
                               </div>
                             )}
-                          </div>
+                          </button>
                         )
                       })}
                   </div>
