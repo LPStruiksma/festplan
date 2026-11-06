@@ -83,7 +83,7 @@ describe('ConflictBanner', () => {
 
     // Use getByRole so we target the button directly even though the artist name
     // also appears in the description text above the buttons.
-    fireEvent.click(screen.getByRole('button', { name: /Radiohead/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Choose Radiohead instead of Bicep/ }))
 
     expect(onResolve).toHaveBeenCalledTimes(1)
     expect(onResolve).toHaveBeenCalledWith(C1.key, 'Radiohead')
@@ -93,7 +93,7 @@ describe('ConflictBanner', () => {
     const onResolve = vi.fn()
     render(<ConflictBanner conflicts={[C1]} fest={FEST} fa="#c8f400" onResolve={onResolve} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Bicep/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Choose Bicep instead of Radiohead/ }))
 
     expect(onResolve).toHaveBeenCalledWith(C1.key, 'Bicep')
   })
@@ -264,8 +264,10 @@ describe('ConflictBanner', () => {
       // Simulate the browser-generated click on native keyboard activation.
       fireEvent.click(button)
     }
-    expect(onResolve).toHaveBeenCalledExactlyOnceWith(C1.key, 'Bicep')
-    expect(onDismissDropped).toHaveBeenCalledExactlyOnceWith(C1.key)
+    expect(onResolve).toHaveBeenCalledTimes(1)
+    expect(onResolve).toHaveBeenCalledWith(C1.key, 'Bicep')
+    expect(onDismissDropped).toHaveBeenCalledTimes(1)
+    expect(onDismissDropped).toHaveBeenCalledWith(C1.key)
   })
 
   test('missing day and stage information is omitted rather than fabricated', () => {
