@@ -100,22 +100,77 @@ describe('ListView', () => {
     const onRate = vi.fn()
     const lineup = [slot('Clairo')]
     render(<ListView {...baseProps} dayLineup={lineup} myArtists={['Clairo']} onRate={onRate} />)
-    fireEvent.click(screen.getAllByText('★')[0])
-    expect(onRate).toHaveBeenCalledWith('Clairo', 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Rate Clairo 1 star' }))
+    expect(onRate).toHaveBeenCalledExactlyOnceWith('Clairo', 1)
   })
 
   test('clicking the fifth star calls onRate(artist, 5)', () => {
     const onRate = vi.fn()
     const lineup = [slot('Clairo')]
     render(<ListView {...baseProps} dayLineup={lineup} myArtists={['Clairo']} onRate={onRate} />)
-    fireEvent.click(screen.getAllByText('★')[4])
-    expect(onRate).toHaveBeenCalledWith('Clairo', 5)
+    fireEvent.click(screen.getByRole('button', { name: 'Rate Clairo 5 stars' }))
+    expect(onRate).toHaveBeenCalledExactlyOnceWith('Clairo', 5)
+  })
+
+  test.each([1, 2, 3, 4, 5])('keyboard activation saves %i stars with Enter and Space', stars => {
+    const onRate = vi.fn()
+    render(<ListView {...baseProps} dayLineup={[slot('Clairo')]} myArtists={['Clairo']} onRate={onRate} />)
+    const name = `Rate Clairo ${stars} ${stars === 1 ? 'star' : 'stars'}`
+    const button = screen.getByRole('button', { name })
+
+    for (const key of ['Enter', ' ']) {
+      button.focus()
+      expect(button).toHaveFocus()
+      fireEvent.keyDown(button, { key })
+      expect(onRate).toHaveBeenLastCalledWith('Clairo', stars)
+    }
+    expect(onRate).toHaveBeenCalledTimes(2)
+  })
+
+  test('rating has accessible names and marks only the current saved rating pressed', () => {
+    render(<ListView {...baseProps} dayLineup={[slot('Clairo')]} myArtists={['Clairo']}
+      ratings={{ Clairo: 3 }} onRate={vi.fn()} />)
+    expect(screen.getByRole('group', { name: 'Rating for Clairo' })).toBeInTheDocument()
+
+    for (const stars of [1, 2, 3, 4, 5]) {
+      const button = screen.getByRole('button', {
+        name: `Rate Clairo ${stars} ${stars === 1 ? 'star' : 'stars'}`,
+      })
+      expect(button).toHaveAttribute('type', 'button')
+      expect(button).toHaveAttribute('aria-pressed', String(stars === 3))
+    }
+  })
+
+  test('unrated artists have no selected stars', () => {
+    render(<ListView {...baseProps} dayLineup={[slot('Clairo')]} myArtists={['Clairo']}
+      onRate={vi.fn()} />)
+    expect(screen.getAllByRole('button')).toHaveLength(5)
+    screen.getAllByRole('button').forEach(button => {
+      expect(button).toHaveAttribute('aria-pressed', 'false')
+    })
   })
 
   test('star widget is absent when onRate is null', () => {
     const lineup = [slot('Clairo')]
     render(<ListView {...baseProps} dayLineup={lineup} myArtists={['Clairo']} onRate={null} />)
-    expect(screen.queryByText('★')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Rating for Clairo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  test('star widget is absent for artists not in my picks', () => {
+    render(<ListView {...baseProps} dayLineup={[slot('Clairo')]}
+      myArtists={['Bicep']} onRate={vi.fn()} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  test('lineup-only slots keep their stage and rating without fake timetable times', () => {
+    render(<ListView {...baseProps} dayLineup={[slot('Clairo', { stage: 'Main Stage' })]}
+      myArtists={['Clairo']} onRate={vi.fn()} />)
+    expect(screen.getByText('Clairo')).toBeInTheDocument()
+    expect(screen.getByText('Main Stage')).toBeInTheDocument()
+    expect(screen.getByText('Your Pick')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rate Clairo 1 star' })).toBeInTheDocument()
+    expect(screen.queryByText('to')).not.toBeInTheDocument()
   })
 
   // ── "ALL GOING" label ────────────────────────────────────────────────────────
