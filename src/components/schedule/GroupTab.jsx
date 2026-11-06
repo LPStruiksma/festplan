@@ -1,7 +1,12 @@
-import React, { useState } from 'react'
+import React, { useId, useState } from 'react'
 import { T, pillBtn } from '../../lib/ui'
 import { FRIEND_COLORS, norm, toMins } from '../../lib/festivals'
 import { useIsMobile } from '../../lib/use-is-mobile'
+
+const visuallyHidden = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
+  overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0,
+}
 
 /**
  * "Group" tab — participants panel + per-day group slot list.
@@ -45,6 +50,7 @@ export default function GroupTab({
   // (e.g. rotating from landscape to portrait). We don't force-collapse on
   // resize because the user may have explicitly opened it.
   const totalPeople = friends.length + 1   // +1 for "Me"
+  const participantsId = useId()
 
   return (
     <div className="fp-animate-in fp-stagger-2">
@@ -74,17 +80,22 @@ export default function GroupTab({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           flexWrap: 'wrap', gap: 8,
         }}>
-          {/* On mobile, tapping "Participants" toggles the list */}
-          <span
-            onClick={isMobile ? () => setParticipantsExpanded(e => !e) : undefined}
-            style={{
-              cursor: isMobile ? 'pointer' : 'default',
-              display: 'flex', alignItems: 'center', gap: 8,
-              userSelect: 'none',
-            }}
-          >
-            Participants
-            {isMobile && (
+          {/* A native button supports Tab, Enter and Space without custom key handlers. */}
+          {isMobile ? (
+            <button
+              type="button"
+              aria-expanded={participantsExpanded}
+              aria-controls={participantsId}
+              onClick={() => setParticipantsExpanded(expanded => !expanded)}
+              style={{
+                background: 'transparent', border: 0, padding: 0, margin: 0,
+                color: 'inherit', font: 'inherit', textTransform: 'inherit',
+                letterSpacing: 'inherit', display: 'inline-flex',
+                alignItems: 'center', gap: 8, textAlign: 'left',
+                cursor: 'pointer', minHeight: 44,
+              }}
+            >
+              Participants
               <span style={{
                 fontSize: 9, color: 'var(--fp-text-dim)', fontWeight: 600,
               }}>
@@ -92,8 +103,10 @@ export default function GroupTab({
                   ? `${totalPeople} people ▲`
                   : `${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} ▼`}
               </span>
-            )}
-          </span>
+            </button>
+          ) : (
+            <span>Participants</span>
+          )}
           <div style={{ display: 'flex', gap: 6 }}>
             {friends.length < 3 && !addingFriend && (
               <button onClick={() => setAddingFriend(true)} style={{
@@ -119,11 +132,18 @@ export default function GroupTab({
                 : '◎ Invite Friend'}
             </button>
           </div>
+          {/* Persistent live regions announce status changes even while the invite button has focus. */}
+          <div role="status" aria-live="polite" aria-atomic="true" style={visuallyHidden}>
+            {inviteStatus === 'loading' ? 'Preparing invitation link…'
+              : inviteStatus === 'copied' ? 'Invitation link copied.' : ''}
+          </div>
+          <div role="alert" aria-atomic="true" style={visuallyHidden}>
+            {inviteStatus === 'error' ? 'Could not prepare invitation link. Please try again.' : ''}
+          </div>
         </div>
 
         {/* Participant rows — collapsible on mobile */}
-        {(participantsExpanded || !isMobile) && (
-          <>
+        <div id={participantsId} hidden={isMobile && !participantsExpanded}>
             {/* Me row */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12,
@@ -169,8 +189,7 @@ export default function GroupTab({
                 >×</span>
               </div>
             ))}
-          </>
-        )}
+        </div>
 
         {/* Add friend form */}
         {addingFriend && (
