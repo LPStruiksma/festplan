@@ -72,7 +72,7 @@ describe('ConflictBanner', () => {
     render(<ConflictBanner conflicts={[C1]} fest={FEST} fa="#c8f400" onResolve={() => {}} />)
 
     // "overlap on Fri Apr 10" — day index 0 → FEST.days[0]
-    expect(screen.getByText(/Fri Apr 10/)).toBeInTheDocument()
+    expect(screen.getByText(/overlap on Fri Apr 10/)).toBeInTheDocument()
   })
 
   // ── Click → onResolve ───────────────────────────────────────────────────────
