@@ -73,7 +73,8 @@ describe('DaySelector', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sun Apr 12, 0 picks' }))
 
-    expect(onDayChange).toHaveBeenCalledExactlyOnceWith(2)
+    expect(onDayChange).toHaveBeenCalledTimes(1)
+    expect(onDayChange).toHaveBeenCalledWith(2)
     expect(SLOTS).toEqual(snapshot)
   })
 
@@ -106,6 +107,7 @@ describe('DaySelector', () => {
     fireEvent.click(saturday)
     fireEvent.keyUp(saturday, { key })
 
-    expect(onDayChange).toHaveBeenCalledExactlyOnceWith(1)
+    expect(onDayChange).toHaveBeenCalledTimes(1)
+    expect(onDayChange).toHaveBeenCalledWith(1)
   })
 })
