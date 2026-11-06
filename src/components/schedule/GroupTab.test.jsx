@@ -3,12 +3,12 @@ import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import GroupTab from './GroupTab'
+import { useIsMobile } from '../../lib/use-is-mobile'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-// GroupTab calls useIsMobile() — mock it as desktop so the participants list
-// is always expanded and all buttons are visible.
-vi.mock('../../lib/use-is-mobile', () => ({ useIsMobile: () => false }))
+// Default to desktop; individual disclosure tests exercise the mobile layout.
+vi.mock('../../lib/use-is-mobile', () => ({ useIsMobile: vi.fn(() => false) }))
 
 vi.mock('../../lib/festivals', () => ({
   norm:          (s) => (s || '').toLowerCase().trim(),
@@ -65,7 +65,10 @@ const baseProps = {
   inviteStatus:   'idle',
 }
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => {
+  vi.clearAllMocks()
+  useIsMobile.mockReturnValue(false)
+})
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -154,6 +157,55 @@ describe('GroupTab', () => {
     expect(onRemoveFriend).toHaveBeenCalledWith(0)
   })
 
+
+  // ── Mobile participants disclosure ─────────────────────────────────────────
+
+  test('mobile participants disclosure is focusable and supports keyboard-generated activation', () => {
+    useIsMobile.mockReturnValue(true)
+    render(<GroupTab {...baseProps} />)
+
+    const disclosure = screen.getByRole('button', { name: /Participants/ })
+    expect(disclosure).toHaveAttribute('type', 'button')
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(disclosure).toHaveTextContent('1 person')
+    const panel = document.getElementById(disclosure.getAttribute('aria-controls'))
+    expect(panel).toBeInTheDocument()
+    expect(panel).toHaveAttribute('hidden')
+
+    disclosure.focus()
+    expect(disclosure).toHaveFocus()
+    // Browsers dispatch a click for Enter and Space on native buttons;
+    // jsdom's fireEvent does not synthesize that default action.
+    fireEvent.keyDown(disclosure, { key: 'Enter', code: 'Enter' })
+    fireEvent.click(disclosure, { detail: 0 })
+    fireEvent.keyUp(disclosure, { key: 'Enter', code: 'Enter' })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    expect(panel).not.toHaveAttribute('hidden')
+    expect(screen.getByText('Me')).toBeVisible()
+
+    fireEvent.keyDown(disclosure, { key: ' ', code: 'Space' })
+    fireEvent.keyUp(disclosure, { key: ' ', code: 'Space' })
+    fireEvent.click(disclosure, { detail: 0 })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(panel).toHaveAttribute('hidden')
+  })
+
+  test('desktop participants stay visible without an unnecessary disclosure control', () => {
+    render(<GroupTab {...baseProps} />)
+    expect(screen.queryByRole('button', { name: /Participants/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Me')).toBeVisible()
+  })
+
+  test('mobile disclosure includes empty-friend participants and the correct count', () => {
+    useIsMobile.mockReturnValue(true)
+    render(<GroupTab {...baseProps} friends={[]} />)
+    const disclosure = screen.getByRole('button', { name: /Participants/ })
+    expect(disclosure).toHaveTextContent('1 person')
+    fireEvent.click(disclosure)
+    expect(screen.getByText('Me')).toBeVisible()
+    expect(screen.getByText('1 artists')).toBeVisible()
+  })
+
   // ── Invite flow ──────────────────────────────────────────────────────────────
 
   test('invite button calls onInvite when clicked', () => {
@@ -166,6 +218,33 @@ describe('GroupTab', () => {
   test('shows "✓ Link Copied!" when inviteStatus is "copied"', () => {
     render(<GroupTab {...baseProps} inviteStatus="copied" />)
     expect(screen.getByText('✓ Link Copied!')).toBeInTheDocument()
+  })
+
+
+  test('invitation loading, copy success and failure are announced in live regions', () => {
+    const { rerender } = render(<GroupTab {...baseProps} />)
+    const status = screen.getByRole('status')
+    const alert = screen.getByRole('alert')
+    expect(status).toHaveAttribute('aria-live', 'polite')
+    expect(status).toHaveAttribute('aria-atomic', 'true')
+    expect(alert).toHaveAttribute('aria-atomic', 'true')
+    expect(status).toBeEmptyDOMElement()
+    expect(alert).toBeEmptyDOMElement()
+
+    rerender(<GroupTab {...baseProps} inviteStatus="loading" />)
+    expect(status).toHaveTextContent('Preparing invitation link…')
+    expect(screen.getByRole('button', { name: '…' })).toBeDisabled()
+    expect(alert).toBeEmptyDOMElement()
+
+    rerender(<GroupTab {...baseProps} inviteStatus="copied" />)
+    expect(status).toHaveTextContent('Invitation link copied.')
+    expect(screen.getByRole('button', { name: '✓ Link Copied!' })).toBeEnabled()
+    expect(alert).toBeEmptyDOMElement()
+
+    rerender(<GroupTab {...baseProps} inviteStatus="error" />)
+    expect(status).toBeEmptyDOMElement()
+    expect(alert).toHaveTextContent('Could not prepare invitation link. Please try again.')
+    expect(screen.getByRole('button', { name: '✕ Try Again' })).toBeEnabled()
   })
 
   // ── "All Going" section ──────────────────────────────────────────────────────
