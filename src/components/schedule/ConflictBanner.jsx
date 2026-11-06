@@ -72,8 +72,7 @@ export default function ConflictBanner({ conflicts, fest, onResolve, droppedPick
             fontFamily: T.body,
             fontSize: 13, color: 'var(--fp-warn)', marginBottom: 12, lineHeight: 1.5,
           }}>
-            <strong>{c.a.artist}</strong> and <strong>{c.b.artist}</strong> overlap{' '}
-            {sharedDay ? `on ${sharedDay}` : ''}. Who do you want to see?
+            <strong>{c.a.artist}</strong> and <strong>{c.b.artist}</strong> overlap{sharedDay ? ` on ${sharedDay}` : ''}. Who do you want to see?
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {[c.a, c.b].map((slot, index) => {
