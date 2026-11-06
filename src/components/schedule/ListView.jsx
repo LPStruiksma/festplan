@@ -132,16 +132,29 @@ export default function ListView({ dayLineup, myArtists, fa, ratings, onRate, gr
                   }}>Your Pick</div>
                 )}
                 {mine && onRate && (
-                  <div style={{ display: 'flex', gap: 2 }}>
+                  <div role="group" aria-label={`Rating for ${slot.artist}`}
+                    style={{ display: 'flex', gap: 2 }}>
                     {[1, 2, 3, 4, 5].map(s => (
-                      <span key={s}
+                      <button key={s} type="button"
+                        aria-label={`Rate ${slot.artist} ${s} ${s === 1 ? 'star' : 'stars'}`}
+                        aria-pressed={ratings[slot.artist] === s}
                         onClick={() => onRate(slot.artist, s)}
+                        onKeyDown={e => {
+                          // Suppress native activation so keyboard users trigger exactly one rating.
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            if (!e.repeat) onRate(slot.artist, s)
+                          }
+                        }}
                         style={{
-                          cursor: 'pointer', fontSize: 13,
+                          cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                          minWidth: 20, minHeight: 20, padding: 0,
+                          border: 0, background: 'transparent',
                           color: (ratings[slot.artist] || 0) >= s ? fa : 'var(--fp-border2)',
                           transition: 'color 0.15s ease',
+                          outlineOffset: 2,
                         }}
-                      >★</span>
+                      ><span aria-hidden="true">★</span></button>
                     ))}
                   </div>
                 )}
