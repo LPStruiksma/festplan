@@ -69,9 +69,56 @@ describe('buildIcs', () => {
     expect(lines(ics)).toContain('DTEND:20250614T010000')
   })
 
-  it('writes DTSTAMP from the given time', () => {
-    const ics = buildIcs(fest, [slot('A', 'B', 0, '21:00', '22:00')], NOW)
-    expect(lines(ics)).toContain('DTSTAMP:20260401T000000Z')
+  it('writes a real UTC DTSTAMP with seconds, not local midnight', () => {
+    const instant = new Date('2027-01-01T00:20:37+02:00')
+    const ics = buildIcs(fest, [slot('A', 'B', 0, '21:00', '22:00')], instant)
+    expect(lines(ics)).toContain('DTSTAMP:20261231T222037Z')
+  })
+
+  it('keeps a slot UID stable across exports at different instants', () => {
+    const item = slot('A', 'Main Stage', 0, '21:00', '22:00')
+    const first = buildIcs(fest, [item], new Date('2026-04-01T01:02:03Z'))
+    const next = buildIcs(fest, [item], new Date('2026-04-02T04:05:06Z'))
+    expect(uidOf(first, 'A @ Main Stage')).toBe(uidOf(next, 'A @ Main Stage'))
+    expect(first).toContain('DTSTAMP:20260401T010203Z')
+    expect(next).toContain('DTSTAMP:20260402T040506Z')
+  })
+
+  it('rolls an overnight slot across New Year on the ISO startDate path', () => {
+    const newYear = { ...fest, startDate: '2026-12-31', days: ['Thu Dec 31'] }
+    const ics = buildIcs(newYear, [slot('A', 'Main', 0, '23:30', '00:30')], NOW)
+    expect(lines(ics)).toContain('DTSTART:20261231T233000')
+    expect(lines(ics)).toContain('DTEND:20270101T003000')
+  })
+
+  it('rolls a post-midnight end at or after 06:00 across a month boundary', () => {
+    const january = { ...fest, startDate: '2027-01-31', days: ['Sun Jan 31'] }
+    const ics = buildIcs(january, [slot('A', 'Main', 0, '23:45', '07:00')], NOW)
+    expect(lines(ics)).toContain('DTSTART:20270131T234500')
+    expect(lines(ics)).toContain('DTEND:20270201T070000')
+  })
+
+  it('keeps an end after a post-midnight start on the next day', () => {
+    const newYear = { ...fest, startDate: '2026-12-31', days: ['Thu Dec 31'] }
+    const ics = buildIcs(newYear, [slot('A', 'Main', 0, '05:30', '06:15')], NOW)
+    expect(lines(ics)).toContain('DTSTART:20270101T053000')
+    expect(lines(ics)).toContain('DTEND:20270101T061500')
+  })
+
+  it('handles a legacy festival crossing the end of a month', () => {
+    const legacy = { id: 'old', name: 'Old Fest 2027', days: ['Sun Jan 31'] }
+    const ics = buildIcs(legacy, [slot('A', 'Main', 0, '23:00', '07:00')], NOW)
+    expect(lines(ics)).toContain('DTSTART:20270131T230000')
+    expect(lines(ics)).toContain('DTEND:20270201T070000')
+  })
+
+  it('does not invent events for a festival without timetable slots', () => {
+    const empty = Object.freeze([])
+    const festival = Object.freeze({ ...fest })
+    const ics = buildIcs(festival, empty, NOW)
+    expect(ics).not.toContain('BEGIN:VEVENT')
+    expect(ics).toContain('END:VCALENDAR')
+    expect(empty).toHaveLength(0)
   })
 })
 
