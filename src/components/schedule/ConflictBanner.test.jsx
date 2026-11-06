@@ -214,4 +214,84 @@ describe('ConflictBanner', () => {
     expect(screen.getByText(/1 Scheduling Conflict/)).toBeInTheDocument()
     expect(screen.getByText(/Pick again\?/)).toBeInTheDocument()
   })
+
+  // ── Accessible decisions: explicit choices, context and native keyboard use ──
+
+  test('labels each conflict group and both choices with their actual day, time and stage', () => {
+    render(<ConflictBanner conflicts={[C1, C2]} fest={FEST} onResolve={() => {}} />)
+
+    expect(screen.getByRole('group', { name: /Scheduling conflict: Radiohead and Bicep on Fri Apr 10/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Scheduling conflict: The xx and FKA twigs on Sat Apr 11/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Choose Radiohead instead of Bicep, Fri Apr 10, 21:00–22:30, Pyramid Stage/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Choose Bicep instead of Radiohead, Fri Apr 10, 21:30–23:00, Other Stage/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Choose The xx instead of FKA twigs, Sat Apr 11, 20:00–21:30, Main Stage/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Choose FKA twigs instead of The xx, Sat Apr 11, 20:30–22:00, West Holts/ })).toBeInTheDocument()
+  })
+
+  test('native choice buttons can be focused and keyboard-activated independently', () => {
+    const onResolve = vi.fn()
+    render(<ConflictBanner conflicts={[C1, C2]} fest={FEST} onResolve={onResolve} />)
+
+    const first = screen.getByRole('button', { name: /Choose Bicep instead of Radiohead/ })
+    const second = screen.getByRole('button', { name: /Choose FKA twigs instead of The xx/ })
+    for (const [button, key] of [[first, 'Enter'], [second, ' ']]) {
+      button.focus()
+      expect(button).toHaveFocus()
+      fireEvent.keyDown(button, { key })
+      fireEvent.keyUp(button, { key })
+      // jsdom does not synthesize the native button click following a key press.
+      fireEvent.click(button)
+    }
+    expect(onResolve).toHaveBeenNthCalledWith(1, C1.key, 'Bicep')
+    expect(onResolve).toHaveBeenNthCalledWith(2, C2.key, 'FKA twigs')
+    expect(onResolve).toHaveBeenCalledTimes(2)
+  })
+
+  test('dropped pick recovery and dismissal retain distinct keyboard-operable actions', () => {
+    const onResolve = vi.fn()
+    const onDismissDropped = vi.fn()
+    render(<ConflictBanner conflicts={[]} droppedPicks={[DROPPED]} fest={FEST}
+      onResolve={onResolve} onDismissDropped={onDismissDropped} />)
+
+    expect(screen.getByRole('group', { name: /Pick again for Radiohead/ })).toBeInTheDocument()
+    const recover = screen.getByRole('button', { name: /See Bicep instead of Radiohead/ })
+    const dismiss = screen.getByRole('button', { name: /Leave it.*Radiohead/ })
+    for (const [button, key] of [[recover, 'Enter'], [dismiss, ' ']]) {
+      button.focus()
+      expect(button).toHaveFocus()
+      fireEvent.keyDown(button, { key })
+      fireEvent.keyUp(button, { key })
+      // Simulate the browser-generated click on native keyboard activation.
+      fireEvent.click(button)
+    }
+    expect(onResolve).toHaveBeenCalledExactlyOnceWith(C1.key, 'Bicep')
+    expect(onDismissDropped).toHaveBeenCalledExactlyOnceWith(C1.key)
+  })
+
+  test('missing day and stage information is omitted rather than fabricated', () => {
+    const partial = {
+      key: 'Partial|||Unknown',
+      a: { artist: 'Partial', start: '19:00' },
+      b: { artist: 'Unknown', end: '20:00', stage: '' },
+    }
+    const { container } = render(<ConflictBanner conflicts={[partial]}
+      droppedPicks={[{ conflict: partial, picked: partial.a, other: partial.b }]}
+      fest={{ days: [] }} onResolve={() => {}} onDismissDropped={() => {}} />)
+
+    expect(screen.getByRole('group', { name: 'Scheduling conflict: Partial and Unknown' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Choose Partial instead of Unknown, Starts 19:00' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Choose Unknown instead of Partial, Ends 20:00' })).toBeInTheDocument()
+    expect(screen.getByText(/Partial lost another clash, leaving this slot empty/)).toBeInTheDocument()
+    expect(container).not.toHaveTextContent(/undefined|null|Invalid Date|NaN/)
+    expect(container).not.toHaveTextContent(/on\s+\./)
+  })
+
+  test('a missing festival day list does not prevent rendering real slot details', () => {
+    const { container } = render(
+      <ConflictBanner conflicts={[C1]} fest={{}} onResolve={() => {}} />
+    )
+    expect(screen.getByRole('button', { name: 'Choose Radiohead instead of Bicep, 21:00–22:30, Pyramid Stage' })).toBeInTheDocument()
+    expect(container).not.toHaveTextContent('undefined')
+  })
+
 })
