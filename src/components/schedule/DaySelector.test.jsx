@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DaySelector from './DaySelector'
 
@@ -87,7 +87,7 @@ describe('DaySelector', () => {
 
     const saturday = screen.getByRole('button', { name: 'Sat Apr 11, 1 pick' })
     expect(saturday).toHaveAttribute('type', 'button')
-    saturday.focus()
+    act(() => saturday.focus())
 
     expect(saturday).toHaveFocus()
     expect(saturday).toHaveStyle({ outline: `2px solid ${FA}` })
@@ -99,7 +99,7 @@ describe('DaySelector', () => {
     const onDayChange = vi.fn()
     render(<DaySelector {...props({ onDayChange })} />)
     const saturday = screen.getByRole('button', { name: 'Sat Apr 11, 1 pick' })
-    saturday.focus()
+    act(() => saturday.focus())
 
     // jsdom does not synthesize a native button click from keydown; model the
     // browser's single activation click after its keyboard event sequence.
