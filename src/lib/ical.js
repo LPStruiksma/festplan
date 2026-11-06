@@ -122,7 +122,7 @@ export function buildIcs(fest, schedule, now) {
         `UID:${slug(fest.id)}-d${s.day}-${s.start.replace(':', '')}-${slug(s.stage)}-${slug(s.artist)}@festplan.app`,
         `DTSTAMP:${dtstamp}`,
         'END:VEVENT',
-      ].map(foldLine).join('\\r\\n')
+      ].map(foldLine).join('\r\n')
     })
 
   return [
