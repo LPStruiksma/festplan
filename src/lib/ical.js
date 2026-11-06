@@ -88,6 +88,11 @@ const toIcal = d =>
   `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}` +
   `T${pad2(d.getHours())}${pad2(d.getMinutes())}00`
 
+// DTSTAMP must be an actual UTC instant, not a floating local date or midnight.
+const toIcalUtc = d =>
+  `${d.getUTCFullYear()}${pad2(d.getUTCMonth()+1)}${pad2(d.getUTCDate())}` +
+  `T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`
+
 /**
  * @param {object} fest      festival ({ id, name, startDate?, days })
  * @param {Array}  schedule  slots ({ artist, stage, day, start, end }); not mutated
@@ -96,22 +101,29 @@ const toIcal = d =>
  */
 export function buildIcs(fest, schedule, now) {
   const resolveSlotDate = slotDateResolver(fest)
-  const dtstamp = toIcal(now).replace(/T\d{6}$/, 'T000000Z')
+  const dtstamp = toIcalUtc(now)
 
   const vevents = [...schedule]
     .sort((a, b) => a.day - b.day || toMins(a.start) - toMins(b.start))
-    .map(s => [
-      'BEGIN:VEVENT',
-      `DTSTART:${toIcal(resolveSlotDate(s.day, s.start))}`,
-      `DTEND:${toIcal(resolveSlotDate(s.day, s.end))}`,
-      `SUMMARY:${escapeText(`${s.artist} @ ${s.stage}`)}`,
-      `LOCATION:${escapeText(fest.name)}`,
-      // Built from the slot itself, not its export position, so re-importing
-      // after a schedule change updates events instead of duplicating them.
-      `UID:${slug(fest.id)}-d${s.day}-${s.start.replace(':', '')}-${slug(s.stage)}-${slug(s.artist)}@festplan.app`,
-      `DTSTAMP:${dtstamp}`,
-      'END:VEVENT',
-    ].map(foldLine).join('\r\n'))
+    .map(s => {
+      const start = resolveSlotDate(s.day, s.start)
+      const end = resolveSlotDate(s.day, s.end)
+      // The 06:00 festival-day convention can place an early-morning end on
+      // the preceding date. Advance it to keep every overnight interval valid.
+      if (end <= start) end.setDate(end.getDate() + 1)
+
+      return [
+        'BEGIN:VEVENT',
+        `DTSTART:${toIcal(start)}`,
+        `DTEND:${toIcal(end)}`,
+        `SUMMARY:${escapeText(`${s.artist} @ ${s.stage}`)}`,
+        `LOCATION:${escapeText(fest.name)}`,
+        // Based on the slot, not export position, so re-imports update events.
+        `UID:${slug(fest.id)}-d${s.day}-${s.start.replace(':', '')}-${slug(s.stage)}-${slug(s.artist)}@festplan.app`,
+        `DTSTAMP:${dtstamp}`,
+        'END:VEVENT',
+      ].map(foldLine).join('\\r\\n')
+    })
 
   return [
     'BEGIN:VCALENDAR',
