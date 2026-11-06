@@ -101,7 +101,8 @@ describe('ListView', () => {
     const lineup = [slot('Clairo')]
     render(<ListView {...baseProps} dayLineup={lineup} myArtists={['Clairo']} onRate={onRate} />)
     fireEvent.click(screen.getByRole('button', { name: 'Rate Clairo 1 star' }))
-    expect(onRate).toHaveBeenCalledExactlyOnceWith('Clairo', 1)
+    expect(onRate).toHaveBeenCalledTimes(1)
+    expect(onRate).toHaveBeenCalledWith('Clairo', 1)
   })
 
   test('clicking the fifth star calls onRate(artist, 5)', () => {
@@ -109,7 +110,8 @@ describe('ListView', () => {
     const lineup = [slot('Clairo')]
     render(<ListView {...baseProps} dayLineup={lineup} myArtists={['Clairo']} onRate={onRate} />)
     fireEvent.click(screen.getByRole('button', { name: 'Rate Clairo 5 stars' }))
-    expect(onRate).toHaveBeenCalledExactlyOnceWith('Clairo', 5)
+    expect(onRate).toHaveBeenCalledTimes(1)
+    expect(onRate).toHaveBeenCalledWith('Clairo', 5)
   })
 
   test.each([1, 2, 3, 4, 5])('keyboard activation saves %i stars with Enter and Space', stars => {
