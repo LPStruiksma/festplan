@@ -143,6 +143,43 @@ describe('getInvite', () => {
 
     expect(await getInvite('s')).toBeNull()
   })
+
+  it('rejects returned RPC errors rather than reporting an expired invite', async () => {
+    const row = { slug: 's', festival_key: 'lowlands', inviter_user_id: 'a' }
+    supabase.rpc.mockResolvedValue({
+      data: [row],
+      error: { message: 'RPC unavailable', code: 'PGRST202' },
+    })
+
+    await expect(getInvite('s')).rejects.toThrow('getInvite: RPC unavailable')
+    expect(supabase.rpc).toHaveBeenCalledWith('get_invite', { p_slug: 's' })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('propagates a rejected RPC promise', async () => {
+    const failure = new Error('network offline')
+    supabase.rpc.mockRejectedValue(failure)
+
+    await expect(getInvite('s')).rejects.toBe(failure)
+  })
+
+  it('propagates an RPC call that throws synchronously', async () => {
+    const failure = new Error('client unavailable')
+    supabase.rpc.mockImplementation(() => { throw failure })
+
+    await expect(getInvite('s')).rejects.toBe(failure)
+  })
+
+  it('returns null for successful null data, without treating it as a failure', async () => {
+    supabase.rpc.mockResolvedValue({ data: null, error: null })
+
+    await expect(getInvite('s')).resolves.toBeNull()
+  })
+
+  it('returns null without contacting the RPC for a missing slug', async () => {
+    await expect(getInvite('')).resolves.toBeNull()
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
 })
 
 // ── createInvite helpers ──────────────────────────────────────────────────────
