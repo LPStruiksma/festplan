@@ -35,7 +35,8 @@ export default function SetupPage({ session, today = new Date() }) {
   const [discoverySource, setDiscoverySource] = useState(null)
   // All festivals for the Plan mode picker — loaded from Supabase on mount
   const [planFestivals, setPlanFestivals] = useState([])
-  const [planLoaded, setPlanLoaded] = useState(false)
+  const [planStatus, setPlanStatus] = useState('loading') // loading | loaded | error
+  const [planLoadAttempt, setPlanLoadAttempt] = useState(0)
   const [planSearch, setPlanSearch] = useState('')
 
   // Festival comparison — up to 4 IDs selected in Find mode
@@ -97,10 +98,20 @@ export default function SetupPage({ session, today = new Date() }) {
     load()
   }, [session])
 
-  // Load all seeded festivals for the Plan mode picker on first mount
+  // Load the real festival list on mount and only retry when the user asks.
+  // Ignore responses from an obsolete attempt or an unmounted picker.
   useEffect(() => {
-    fetchAllFestivals().then(list => { setPlanFestivals(list || []); setPlanLoaded(true) })
-  }, [])
+    let active = true
+    setPlanStatus('loading')
+    Promise.resolve().then(() => fetchAllFestivals()).then(list => {
+      if (!active) return
+      setPlanFestivals(Array.isArray(list) ? list : [])
+      setPlanStatus('loaded')
+    }).catch(() => {
+      if (active) setPlanStatus('error')
+    })
+    return () => { active = false }
+  }, [planLoadAttempt])
 
   // Keep localStorage in sync immediately whenever myArtists changes (after
   // initial load). This ensures SchedulePage always sees the latest list on
@@ -289,7 +300,7 @@ export default function SetupPage({ session, today = new Date() }) {
     discoveredFestivals.find(f => f.id === festId)
   const selectionFilteredOut = selectedFestival &&
     ![...upcomingPlan, ...pastPlan, ...renderedMorePlanFestivals].some(f => f.id === festId)
-  const noMatchingPlan = planLoaded && searchTerm &&
+  const noMatchingPlan = planStatus === 'loaded' && searchTerm &&
     !upcomingPlan.length && !pastPlan.length && !visibleMorePlanFestivals.length
   const noUpcomingFound = !discovering && discoveredFestivals.length > 0 && upcomingDiscovered.length === 0
 
@@ -614,11 +625,37 @@ export default function SetupPage({ session, today = new Date() }) {
                 }}
               />
 
+              {planStatus === 'loading' && (
+                <p role="status" style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '4px 0 16px' }}>
+                  Loading festivals...
+                </p>
+              )}
+              {planStatus === 'error' && (
+                <div role="alert" style={{ color: 'var(--fp-warn)', fontSize: 12, margin: '4px 0 16px' }}>
+                  <p style={{ margin: '0 0 12px' }}>
+                    Could not load festivals. Check your connection and try again.
+                  </p>
+                  <button type="button" onClick={() => setPlanLoadAttempt(attempt => attempt + 1)} style={{
+                    background: 'transparent',
+                    border: '1px solid var(--fp-warn)',
+                    borderRadius: 'var(--fp-radius-sm)',
+                    color: 'var(--fp-warn)',
+                    padding: '9px 14px',
+                    fontFamily: T.body,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}>
+                    Retry loading festivals
+                  </button>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                 {upcomingPlan.map(planCard)}
               </div>
 
-              {planLoaded && !searchTerm && allUpcomingPlan.length === 0 && morePlanFestivals.length === 0 && (
+              {planStatus === 'loaded' && !searchTerm && allUpcomingPlan.length === 0 && morePlanFestivals.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--fp-text-dim)', margin: '4px 0 0' }}>
                   No upcoming festivals yet
                 </p>

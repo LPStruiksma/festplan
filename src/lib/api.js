@@ -19,43 +19,44 @@ export let artistCache = []
 // works without a separate round-trip.
 
 export async function fetchAllFestivals() {
-  try {
-    const [metaRes, slotsRes] = await Promise.all([
-      supabase
-        .from('festival_meta')
-        .select('festival_key, name, location, emoji, accent_color, days, stages, start_date, end_date')
-        .order('start_date'),
-      supabase
-        .from('timetable_slots')
-        .select('artist'),
-    ])
+  // A failed query must reject: Plan mode uses rejection to show Retry,
+  // while a successful empty festival_meta result means no seeded festivals.
+  const [metaRes, slotsRes] = await Promise.all([
+    supabase
+      .from('festival_meta')
+      .select('festival_key, name, location, emoji, accent_color, days, stages, start_date, end_date')
+      .order('start_date'),
+    supabase
+      .from('timetable_slots')
+      .select('artist'),
+  ])
 
-    const { data, error } = metaRes
-    const { data: slotData }  = slotsRes
+  if (metaRes.error) throw metaRes.error
+  if (slotsRes.error) throw slotsRes.error
 
-    // Hydrate the artist autocomplete cache from all seeded slots.
-    if (slotData?.length) {
-      artistCache = [...new Set(slotData.map(s => s.artist))].sort()
-    }
-
-    if (!error && data && data.length > 0) {
-      return data.map(f => ({
-        id:          f.festival_key,
-        name:        f.name,
-        location:    f.location || '',
-        emoji:       f.emoji || '🎵',
-        days:        f.days || [],
-        startDate:   f.start_date,
-        endDate:     f.end_date,
-        accentColor: f.accent_color || FEST_COLORS[f.festival_key] || null,
-        stages:      f.stages || [],
-        hasTimetable: true,
-      }))
-    }
-  } catch (e) {
-    console.warn('fetchAllFestivals: Supabase unavailable:', e.message)
+  const data = metaRes.data
+  const slotData = slotsRes.data
+  if (!Array.isArray(data) || !Array.isArray(slotData)) {
+    throw new Error('fetchAllFestivals: invalid Supabase query response')
   }
-  return []
+
+  // Hydrate the artist autocomplete cache only after both queries succeed.
+  if (slotData.length) {
+    artistCache = [...new Set(slotData.map(s => s.artist))].sort()
+  }
+
+  return data.map(f => ({
+    id:          f.festival_key,
+    name:        f.name,
+    location:    f.location || '',
+    emoji:       f.emoji || '🎵',
+    days:        f.days || [],
+    startDate:   f.start_date,
+    endDate:     f.end_date,
+    accentColor: f.accent_color || FEST_COLORS[f.festival_key] || null,
+    stages:      f.stages || [],
+    hasTimetable: true,
+  }))
 }
 
 // ── FETCH TIMETABLE ───────────────────────────────────────────────────────────
