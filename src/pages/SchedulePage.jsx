@@ -193,8 +193,10 @@ export default function SchedulePage({ session }) {
   const [addingFriend, setAddingFriend] = useState(false)
   const [newFName,     setNewFName]     = useState('')
   const [newFArtists,  setNewFArtists]  = useState('')
-  // 'idle' | 'loading' | 'copied' | 'error'
+  // 'idle' | 'loading' | 'copied' | 'manual' | 'error'
   const [inviteStatus, setInviteStatus] = useState('idle')
+  // Once creation succeeds, keep the link visible even without clipboard permission.
+  const [inviteUrl, setInviteUrl] = useState(null)
   // null | { type: 'loading'|'success'|'error', msg: string, url?: string }
   const [toast,        setToast]        = useState(null)
   const toastTimerRef = useRef(null)
@@ -301,17 +303,33 @@ export default function SchedulePage({ session }) {
   }
 
   const handleInvite = async () => {
-    if (inviteStatus === 'loading') return
+    // A ready link is already usable: never generate another slug just to copy it.
+    if (inviteStatus === 'loading' || inviteUrl) return
     setInviteStatus('loading')
+    let url
     try {
       const slug = await createInvite(userId, festId)
-      await navigator.clipboard.writeText(`https://festplan.app/join/${slug}`)
-      setInviteStatus('copied')
-      setTimeout(() => setInviteStatus('idle'), 3000)
+      url = `https://festplan.app/join/${slug}`
+      setInviteUrl(url)
     } catch (err) {
       console.error('[festplan] handleInvite:', err)
       setInviteStatus('error')
       setTimeout(() => setInviteStatus('idle'), 3000)
+      return
+    }
+
+    // Clipboard access may be denied or absent on mobile; invite creation still
+    // succeeded, so expose the URL for manual selection instead of offering retry.
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') {
+        setInviteStatus('manual')
+        return
+      }
+      await navigator.clipboard.writeText(url)
+      setInviteStatus('copied')
+      setTimeout(() => setInviteStatus('idle'), 3000)
+    } catch {
+      setInviteStatus('manual')
     }
   }
 
@@ -522,6 +540,7 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
             onRemoveFriend={handleRemoveFriend}
             onInvite={handleInvite}
             inviteStatus={inviteStatus}
+            inviteUrl={inviteUrl}
           />
         )}
       </div>
