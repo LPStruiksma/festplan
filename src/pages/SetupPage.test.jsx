@@ -124,6 +124,7 @@ describe('SetupPage Plan picker request failure and retry', () => {
     renderSetup()
 
     fireEvent.click(await screen.findByRole('button', { name: /Retry loading festivals/i }))
+    await waitFor(() => expect(fetchAllFestivals).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('status')).toHaveTextContent('Loading festivals')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
@@ -147,6 +148,7 @@ describe('SetupPage Plan picker request failure and retry', () => {
     let resolveLate
     fetchAllFestivals.mockImplementation(() => new Promise(resolve => { resolveLate = resolve }))
     const { unmount } = renderSetup()
+    await waitFor(() => expect(fetchAllFestivals).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('status')).toHaveTextContent('Loading festivals')
 
     unmount()
@@ -158,6 +160,7 @@ describe('SetupPage Plan picker request failure and retry', () => {
     let rejectLate
     fetchAllFestivals.mockImplementation(() => new Promise((resolve, reject) => { rejectLate = reject }))
     const { unmount } = renderSetup()
+    await waitFor(() => expect(fetchAllFestivals).toHaveBeenCalledTimes(1))
 
     unmount()
     await act(async () => { rejectLate(new Error('Network unavailable')) })
