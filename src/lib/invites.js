@@ -103,10 +103,7 @@ export async function getInvite(slug) {
   // one row for this slug, or none if it is expired or someone else's.
   const { data, error } = await supabase.rpc('get_invite', { p_slug: slug })
 
-  if (error) {
-    console.warn('[festplan] getInvite:', error.message)
-    return null
-  }
+  if (error) throw new Error(`getInvite: ${error.message}`)
 
   return data?.[0] ?? null   // null if not found / expired
 }
