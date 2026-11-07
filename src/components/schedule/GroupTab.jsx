@@ -29,7 +29,8 @@ const visuallyHidden = {
  *   onAddFriend     — (name, artists[]) => void
  *   onRemoveFriend  — (index) => void
  *   onInvite        — () => void (async)
- *   inviteStatus    — 'idle'|'loading'|'copied'|'error'
+ *   inviteStatus    — 'idle'|'loading'|'copied'|'manual'|'error'
+ *   inviteUrl       — created URL, retained after a denied/unavailable clipboard
  */
 export default function GroupTab({
   fa, fest, isLineupOnly,
@@ -39,7 +40,7 @@ export default function GroupTab({
   newFName, setNewFName,
   newFArtists, setNewFArtists,
   onAddFriend, onRemoveFriend,
-  onInvite, inviteStatus,
+  onInvite, inviteStatus, inviteUrl,
 }) {
   const isMobile = useIsMobile()
   // On mobile, the participants list starts collapsed to save screen space.
@@ -51,6 +52,7 @@ export default function GroupTab({
   // resize because the user may have explicitly opened it.
   const totalPeople = friends.length + 1   // +1 for "Me"
   const participantsId = useId()
+  const inviteFieldId = useId()
 
   return (
     <div className="fp-animate-in fp-stagger-2">
@@ -117,7 +119,7 @@ export default function GroupTab({
             )}
             <button
               onClick={onInvite}
-              disabled={inviteStatus === 'loading'}
+              disabled={inviteStatus === 'loading' || Boolean(inviteUrl)}
               style={{
                 ...pillBtn(inviteStatus === 'copied', fa),
                 padding: '5px 11px', fontSize: 9,
@@ -129,18 +131,56 @@ export default function GroupTab({
               {inviteStatus === 'loading' ? '…'
                 : inviteStatus === 'copied' ? '✓ Link Copied!'
                 : inviteStatus === 'error'  ? '✕ Try Again'
+                : inviteUrl ? '✓ Link Ready'
                 : '◎ Invite Friend'}
             </button>
           </div>
           {/* Persistent live regions announce status changes even while the invite button has focus. */}
           <div role="status" aria-live="polite" aria-atomic="true" style={visuallyHidden}>
             {inviteStatus === 'loading' ? 'Preparing invitation link…'
-              : inviteStatus === 'copied' ? 'Invitation link copied.' : ''}
+              : inviteStatus === 'copied' ? 'Invitation link copied.'
+              : inviteStatus === 'manual' ? 'Invitation link created. Clipboard unavailable; select and copy the link below.' : ''}
           </div>
           <div role="alert" aria-atomic="true" style={visuallyHidden}>
             {inviteStatus === 'error' ? 'Could not prepare invitation link. Please try again.' : ''}
           </div>
         </div>
+
+        {inviteUrl && (
+          <div style={{
+            marginBottom: 16, padding: 12, background: 'var(--fp-s2)',
+            border: '1px solid var(--fp-border2)',
+            borderRadius: 'var(--fp-radius-md)',
+          }}>
+            <label htmlFor={inviteFieldId} style={{
+              display: 'block', fontFamily: T.body, fontSize: 11,
+              fontWeight: 700, color: 'var(--fp-text)', marginBottom: 8,
+            }}>Invitation link</label>
+            <input
+              id={inviteFieldId}
+              type="text"
+              readOnly
+              value={inviteUrl}
+              onFocus={e => e.currentTarget.select()}
+              onClick={e => e.currentTarget.select()}
+              style={{
+                display: 'block', boxSizing: 'border-box', width: '100%',
+                padding: '10px 12px', borderRadius: 'var(--fp-radius-sm)',
+                border: '1px solid var(--fp-border2)',
+                background: 'var(--fp-s1)', color: 'var(--fp-text)',
+                fontFamily: T.body, fontSize: 13,
+              }}
+            />
+            <p style={{
+              fontFamily: T.body, fontSize: 11, lineHeight: 1.5,
+              color: 'var(--fp-text-dim)', margin: '8px 0 0',
+            }}>
+              {inviteStatus === 'manual'
+                ? 'Clipboard unavailable. Select and copy this link to share it.'
+                : 'You can also select and copy this link to share it.'}
+            </p>
+          </div>
+        )}
 
         {/* Participant rows — collapsible on mobile */}
         <div id={participantsId} hidden={isMobile && !participantsExpanded}>
