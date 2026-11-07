@@ -63,58 +63,54 @@ export async function fetchAllFestivals() {
 // Get full stage + time data for a specific festival from Supabase.
 
 export async function fetchTimetable(festivalId) {
-  try {
-    // 1. Fetch festival metadata
-    const { data: meta, error: metaErr } = await supabase
-      .from('festival_meta')
-      .select('*')
-      .eq('festival_key', festivalId)
-      .single()
+  // A successful missing row is distinct from an unavailable backend.
+  // maybeSingle() returns { data: null, error: null } for zero rows.
+  const { data: meta, error: metaErr } = await supabase
+    .from('festival_meta')
+    .select('*')
+    .eq('festival_key', festivalId)
+    .maybeSingle()
 
-    if (metaErr || !meta) {
-      console.warn(`fetchTimetable: no festival_meta for "${festivalId}"`)
-      return null
-    }
+  if (metaErr) throw metaErr
+  if (!meta) return null
 
-    // 2. Fetch timetable slots
-    const { data: slots, error: slotsErr } = await supabase
-      .from('timetable_slots')
-      .select('artist, stage, day_index, start_time, end_time')
-      .eq('festival_key', festivalId)
+  const { data: slots, error: slotsErr } = await supabase
+    .from('timetable_slots')
+    .select('artist, stage, day_index, start_time, end_time')
+    .eq('festival_key', festivalId)
 
-    if (slotsErr) console.warn('fetchTimetable: timetable_slots error:', slotsErr.message)
+  if (slotsErr) throw slotsErr
+  if (!Array.isArray(slots)) {
+    throw new Error('fetchTimetable: invalid Supabase query response')
+  }
 
-    const hasTimetable = !slotsErr && slots && slots.length > 0
+  const hasTimetable = slots.length > 0
 
-    return {
-      source: 'supabase',
-      festival: {
-        id:          festivalId,
-        name:        meta.name,
-        location:    meta.location || '',
-        emoji:       meta.emoji || '🎵',
-        accentColor: meta.accent_color || FEST_COLORS[festivalId] || null,
-        startDate:   meta.start_date || null,
-        endDate:     meta.end_date   || null,
-        days:        meta.days   || [],
-        stages:      meta.stages || (hasTimetable
-          ? [...new Set(slots.map(s => s.stage).filter(Boolean))]
-          : []),
-        lineup: hasTimetable
-          ? slots.map(s => ({
-              artist: s.artist,
-              stage:  s.stage,
-              day:    s.day_index,
-              start:  s.start_time,
-              end:    s.end_time,
-            }))
-          : [],
-        hasTimetable,
-      },
-    }
-  } catch (e) {
-    console.warn('fetchTimetable failed:', e.message)
-    return null
+  return {
+    source: 'supabase',
+    festival: {
+      id:          festivalId,
+      name:        meta.name,
+      location:    meta.location || '',
+      emoji:       meta.emoji || '🎵',
+      accentColor: meta.accent_color || FEST_COLORS[festivalId] || null,
+      startDate:   meta.start_date || null,
+      endDate:     meta.end_date   || null,
+      days:        meta.days   || [],
+      stages:      meta.stages || (hasTimetable
+        ? [...new Set(slots.map(s => s.stage).filter(Boolean))]
+        : []),
+      lineup: hasTimetable
+        ? slots.map(s => ({
+            artist: s.artist,
+            stage:  s.stage,
+            day:    s.day_index,
+            start:  s.start_time,
+            end:    s.end_time,
+          }))
+        : [],
+      hasTimetable,
+    },
   }
 }
 

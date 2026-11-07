@@ -147,44 +147,62 @@ export default function SchedulePage({ session }) {
     try { return JSON.parse(localStorage.getItem('festplan_festival_meta') || 'null') } catch { return null }
   }, [])
 
-  // ── Festival data — loaded async from Supabase ────────────────────────────
+  // ── Festival data — keep a transient fetch error distinct from absence ──
   const [fest, setFest] = useState(null)
-  const [festReady, setFestReady] = useState(!festId)
+  const [festLoad, setFestLoad] = useState(festId ? 'loading' : 'missing')
+  const [retryAttempt, setRetryAttempt] = useState(0)
 
   useEffect(() => {
     if (!festId) return
-    fetchTimetable(festId).then(result => {
-      if (result?.festival) {
-        setFest(result.festival)
-      } else if (festMeta && festMeta.id === festId) {
-        // Supabase unavailable and no seeded data yet — fall back to saved
-        // discovery metadata (lineup-only shape).
-        setFest({
-          id: festMeta.id,
-          name: festMeta.name,
-          location: festMeta.location || '',
-          emoji: festMeta.emoji || '🎵',
-          days: [],
-          stages: [],
-          lineup: (festMeta.matchedArtists || []).map(artist => ({
-            artist, stage: null, day: null, start: null, end: null,
-          })),
-          hasTimetable: false,
-          accentColor: festMeta.accentColor || null,
-        })
-      }
-      setFestReady(true)
-    })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // True when the festival has no published timetable.
+    let active = true
+    fetchTimetable(festId)
+      .then(result => {
+        if (!active) return
+        if (result?.festival) {
+          setFest(result.festival)
+          setFestLoad('loaded')
+        } else if (festMeta && festMeta.id === festId) {
+          // Saved discovery metadata is a valid lineup-only fallback for an
+          // unseeded festival; a failed request never counts as absence.
+          setFest({
+            id: festMeta.id,
+            name: festMeta.name,
+            location: festMeta.location || '',
+            emoji: festMeta.emoji || '🎵',
+            days: [],
+            stages: [],
+            lineup: (festMeta.matchedArtists || []).map(artist => ({
+              artist, stage: null, day: null, start: null, end: null,
+            })),
+            hasTimetable: false,
+            accentColor: festMeta.accentColor || null,
+          })
+          setFestLoad('loaded')
+        } else {
+          setFest(null)
+          setFestLoad('missing')
+        }
+      })
+      .catch(() => {
+        // Deliberately do not surface backend details or discard the festival
+        // choice. Only the Retry button starts another request.
+        if (active) setFestLoad('error')
+      })
+
+    return () => { active = false }
+  }, [festId, festMeta, retryAttempt])
+
   const isLineupOnly = fest ? fest.hasTimetable === false : false
   const fa = fest ? (FEST_COLORS[fest.id] || fest.accentColor || '#c8f400') : '#c8f400'
 
-  // Redirect to setup once the Supabase fetch has settled and there's nothing to show.
+  // Invalid selection, no saved artists, or genuinely missing festival still
+  // returns to setup; network failures leave the selected Plan festival intact.
   useEffect(() => {
-    if (festReady && (!festId || !myArtists.length || !fest)) navigate('/setup', { replace: true })
-  }, [festReady]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!festId || !myArtists.length || festLoad === 'missing') {
+      navigate('/setup', { replace: true })
+    }
+  }, [festId, myArtists.length, festLoad, navigate])
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [day,          setDay]          = useState(0)
@@ -439,7 +457,43 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
     isLineupOnly ? finalSchedule : finalSchedule.filter(s => s.day === day)
   , [isLineupOnly, finalSchedule, day])
 
-  if (!fest) return null
+  if (!fest) {
+    if (festLoad === 'error') {
+      return (
+        <main style={{
+          minHeight: '100vh', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+          background: 'var(--fp-bg)', color: 'var(--fp-text)',
+          fontFamily: T.body, padding: 24, textAlign: 'center',
+        }}>
+          <div role="alert" style={{ fontSize: 14 }}>
+            Could not load this festival. Check your connection and try again.
+          </div>
+          <button type="button" onClick={() => { setFestLoad('loading'); setRetryAttempt(n => n + 1) }} style={{
+            background: 'var(--fp-s1)', color: 'var(--fp-text)',
+            border: '1px solid var(--fp-border)', borderRadius: 8,
+            padding: '10px 18px', fontFamily: T.body, cursor: 'pointer',
+          }}>
+            Retry loading festival
+          </button>
+        </main>
+      )
+    }
+
+    if (festLoad === 'loading') {
+      return (
+        <div role="status" style={{
+          minHeight: '100vh', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', background: 'var(--fp-bg)',
+          color: 'var(--fp-text)', fontFamily: T.body,
+        }}>
+          Loading festival…
+        </div>
+      )
+    }
+
+    return null
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
