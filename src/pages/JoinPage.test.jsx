@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
@@ -51,10 +51,6 @@ beforeEach(() => {
   getInvite.mockResolvedValue(INVITE)
   acceptInvite.mockResolvedValue(INVITE.festival_key)
   saveFestivalKey.mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.useRealTimers()
 })
 
 describe('JoinPage synthetic invite recovery', () => {
@@ -153,9 +149,7 @@ describe('JoinPage synthetic invite recovery', () => {
     expect(saveFestivalKey).toHaveBeenCalledWith(SESSION.user.id, INVITE.festival_key)
     expect(localStorage.getItem('festplan_festival')).toBe(INVITE.festival_key)
     expect(localStorage.getItem('festplan_pending_invite')).toBeNull()
-    vi.useFakeTimers()
-    await act(async () => { vi.advanceTimersByTime(1400) })
-    expect(screen.getByText('schedule destination')).toBeInTheDocument()
+    expect(await screen.findByText('schedule destination', {}, { timeout: 2500 })).toBeInTheDocument()
   })
 
   it('opens the festival for its owner without creating a friends link', async () => {
