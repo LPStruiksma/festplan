@@ -116,7 +116,7 @@ describe('SchedulePage invitation clipboard recovery (synthetic)', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     fireEvent.click(await openGroup())
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not prepare invitation link. Please try again.')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not prepare invitation link. Please try again.'))
     expect(screen.queryByRole('textbox', { name: 'Invitation link' })).not.toBeInTheDocument()
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '✕ Try Again' }))
