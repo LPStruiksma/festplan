@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -186,16 +186,21 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'spotify',
-      options: {
-        scopes: 'user-library-read playlist-read-private user-top-read playlist-modify-private',
-        redirectTo: window.location.origin + '/auth/callback',
-      },
-    })
+    try {
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'spotify',
+        options: {
+          scopes: 'user-library-read playlist-read-private user-top-read playlist-modify-private',
+          redirectTo: window.location.origin + '/auth/callback',
+        },
+      })
 
-    if (error) {
-      setError(error.message)
+      if (authError) {
+        setError(authError.message)
+        setLoading(false)
+      }
+    } catch {
+      setError('Could not start Spotify sign-in. Please try again.')
       setLoading(false)
     }
   }
@@ -243,7 +248,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <p style={S.error}>{error}</p>
+          <p role="alert" style={S.error}>{error}</p>
         )}
 
         <p style={S.privacy}>
