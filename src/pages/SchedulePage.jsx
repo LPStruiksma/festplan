@@ -156,7 +156,6 @@ export default function SchedulePage({ session }) {
     if (!festId) return
 
     let active = true
-    setFestLoad('loading')
     fetchTimetable(festId)
       .then(result => {
         if (!active) return
@@ -470,7 +469,7 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
           <div role="alert" style={{ fontSize: 14 }}>
             Could not load this festival. Check your connection and try again.
           </div>
-          <button type="button" onClick={() => setRetryAttempt(n => n + 1)} style={{
+          <button type="button" onClick={() => { setFestLoad('loading'); setRetryAttempt(n => n + 1) }} style={{
             background: 'var(--fp-s1)', color: 'var(--fp-text)',
             border: '1px solid var(--fp-border)', borderRadius: 8,
             padding: '10px 18px', fontFamily: T.body, cursor: 'pointer',
