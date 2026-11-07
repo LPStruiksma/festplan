@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FEST_COLORS, FRIEND_COLORS, norm, toMins, overlaps, buildFinalSchedule, findDroppedPicks } from '../lib/festivals'
 import { fetchTimetable } from '../lib/api'
