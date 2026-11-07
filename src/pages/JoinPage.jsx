@@ -63,7 +63,6 @@ export default function JoinPage({ session }) {
     // Save the slug for AuthCallback; a rejected OAuth initiation must not
     // leave a signed-out visitor indefinitely on the redirect spinner.
     if (!session) {
-      setStatus('redirecting')
       async function startOAuth() {
         try {
           localStorage.setItem('festplan_pending_invite', slug)
