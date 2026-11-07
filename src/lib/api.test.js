@@ -65,6 +65,7 @@ vi.mock('./supabase', () => {
       order:   () => builder,
       eq:      () => builder,
       single:  () => resolved(),
+      maybeSingle: () => resolved(),
       // Make the builder itself awaitable so `await supabase.from(...).select(...)` works.
       then:    (res, rej) => resolved().then(res, rej),
       catch:   (rej)      => resolved().catch(rej),
@@ -87,7 +88,7 @@ vi.mock('./supabase', () => {
   }
 })
 
-import { fallbackDiscover, fetchAllFestivals, artistCache } from './api'
+import { fallbackDiscover, fetchAllFestivals, fetchTimetable, artistCache } from './api'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fallbackDiscover(artists)
@@ -270,5 +271,60 @@ describe('fetchAllFestivals query contract', () => {
       hasTimetable: true,
     }])
     expect(artistCache).toEqual(['Bicep', 'Slowdive'])
+  })
+})
+
+// U9: timetable transport/query errors cannot masquerade as a missing festival
+// or an unpublished timetable. These tests invoke the exported real helper.
+describe('fetchTimetable error vs absence contract', () => {
+  beforeEach(() => {
+    queryResponses.festival_meta = null
+    queryResponses.timetable_slots = null
+  })
+
+  test('propagates a rejected festival metadata transport request', async () => {
+    const failure = new Error('synthetic metadata transport failure')
+    queryResponses.festival_meta = () => Promise.reject(failure)
+    await expect(fetchTimetable('alpha')).rejects.toBe(failure)
+  })
+
+  test('propagates an explicit metadata permission error', async () => {
+    const failure = { code: '42501', message: 'synthetic permission failure' }
+    queryResponses.festival_meta = { data: null, error: failure }
+    await expect(fetchTimetable('alpha')).rejects.toBe(failure)
+  })
+
+  test('propagates a thrown timetable slots transport request', async () => {
+    const failure = new Error('synthetic slots transport failure')
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    queryResponses.timetable_slots = () => { throw failure }
+    await expect(fetchTimetable('alpha')).rejects.toBe(failure)
+  })
+
+  test('propagates an explicit timetable slots error', async () => {
+    const failure = { code: '08006', message: 'synthetic slots failure' }
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    queryResponses.timetable_slots = { data: null, error: failure }
+    await expect(fetchTimetable('alpha')).rejects.toBe(failure)
+  })
+
+  test('resolves null only when metadata is genuinely absent with no query error', async () => {
+    queryResponses.festival_meta = { data: null, error: null }
+    await expect(fetchTimetable('does-not-exist')).resolves.toBeNull()
+  })
+
+  test('accepts a seeded festival with a genuinely empty, successful slot list', async () => {
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    queryResponses.timetable_slots = { data: [], error: null }
+    const result = await fetchTimetable('alpha')
+    expect(result.festival.name).toBe('Alpha Fest 2026')
+    expect(result.festival.hasTimetable).toBe(false)
+    expect(result.festival.lineup).toEqual([])
+  })
+
+  test('rejects malformed slots data instead of silently reporting no timetable', async () => {
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    queryResponses.timetable_slots = { data: null, error: null }
+    await expect(fetchTimetable('alpha')).rejects.toThrow('invalid Supabase query response')
   })
 })
