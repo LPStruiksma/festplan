@@ -76,7 +76,7 @@ describe('SchedulePage invitation clipboard recovery (synthetic)', () => {
     const link = await screen.findByRole('textbox', { name: 'Invitation link' })
     expect(link).toHaveValue(URL)
     expect(link).toHaveAttribute('readonly')
-    expect(screen.getByRole('status')).toHaveTextContent(/select and copy/i)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/select and copy/i))
     expect(screen.queryByRole('alert')).toBeEmptyDOMElement()
     expect(screen.queryByRole('button', { name: /Try Again/i })).not.toBeInTheDocument()
     expect(writeText).toHaveBeenCalledWith(URL)
@@ -94,7 +94,7 @@ describe('SchedulePage invitation clipboard recovery (synthetic)', () => {
     setClipboard(undefined)
     fireEvent.click(await openGroup())
     expect(await screen.findByRole('textbox', { name: 'Invitation link' })).toHaveValue(URL)
-    expect(screen.getByRole('status')).toHaveTextContent(/select and copy/i)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/select and copy/i))
     expect(createInvite).toHaveBeenCalledTimes(1)
   })
 
