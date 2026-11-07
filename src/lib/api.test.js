@@ -6,7 +6,7 @@ import { describe, test, expect, vi } from 'vitest'
 // they run before any top-level const declarations.  vi.hoisted() lifts these
 // fixtures to the same level so the mock factory can reference them.
 
-const { MOCK_METAS, MOCK_SLOTS } = vi.hoisted(() => {
+const { MOCK_METAS, MOCK_SLOTS, queryResponses } = vi.hoisted(() => {
   const MOCK_METAS = [
     {
       festival_key: 'alpha',
@@ -41,7 +41,9 @@ const { MOCK_METAS, MOCK_SLOTS } = vi.hoisted(() => {
     { festival_key: 'beta',  artist: 'Little Simz' },
   ]
 
-  return { MOCK_METAS, MOCK_SLOTS }
+  // A per-query override can return an explicit { data, error } or throw/reject.
+  const queryResponses = { festival_meta: null, timetable_slots: null }
+  return { MOCK_METAS, MOCK_SLOTS, queryResponses }
 })
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -50,18 +52,23 @@ const { MOCK_METAS, MOCK_SLOTS } = vi.hoisted(() => {
 // doesn't trigger network or env-var validation.
 
 vi.mock('./supabase', () => {
-  // Build a thenable query-builder that resolves to { data, error: null }.
-  const makeBuilder = (data) => {
-    const resolved = Promise.resolve({ data, error: null })
+  // Resolve on each await so tests exercise the exported helper against
+  // independent festival_meta / timetable_slots failures without network calls.
+  const makeBuilder = (table, data) => {
+    const resolveQuery = () => {
+      const override = queryResponses[table]
+      return typeof override === 'function' ? override() : override ?? { data, error: null }
+    }
+    const resolved = () => Promise.resolve().then(resolveQuery)
     const builder = {
       select:  () => builder,
       order:   () => builder,
       eq:      () => builder,
-      single:  () => resolved,
+      single:  () => resolved(),
       // Make the builder itself awaitable so `await supabase.from(...).select(...)` works.
-      then:    (res, rej) => resolved.then(res, rej),
-      catch:   (rej)      => resolved.catch(rej),
-      finally: (fn)       => resolved.finally(fn),
+      then:    (res, rej) => resolved().then(res, rej),
+      catch:   (rej)      => resolved().catch(rej),
+      finally: (fn)       => resolved().finally(fn),
     }
     return builder
   }
@@ -72,15 +79,15 @@ vi.mock('./supabase', () => {
         getSession: () => Promise.resolve({ data: { session: null } }),
       },
       from: (table) => {
-        if (table === 'festival_meta') return makeBuilder(MOCK_METAS)
-        if (table === 'timetable_slots') return makeBuilder(MOCK_SLOTS)
-        return makeBuilder([])
+        if (table === 'festival_meta') return makeBuilder(table, MOCK_METAS)
+        if (table === 'timetable_slots') return makeBuilder(table, MOCK_SLOTS)
+        return makeBuilder(table, [])
       },
     },
   }
 })
 
-import { fallbackDiscover } from './api'
+import { fallbackDiscover, fetchAllFestivals, artistCache } from './api'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fallbackDiscover(artists)
@@ -197,5 +204,71 @@ describe('recommend-festivals removal', () => {
     expect(api.recommendFestivals).toBeUndefined()
     expect(readFileSync(join(root, 'src', 'lib', 'api.js'), 'utf8')).not.toContain('recommend-festivals')
     expect(existsSync(join(root, 'supabase', 'functions', 'recommend-festivals'))).toBe(false)
+  })
+})
+
+ 
+// #66: a real failed Supabase list request must reject, not masquerade as [].
+// These cases call the exported helper, rather than mocking it at SetupPage.
+describe('fetchAllFestivals query contract', () => {
+  beforeEach(() => {
+    queryResponses.festival_meta = null
+    queryResponses.timetable_slots = null
+  })
+
+  test('rejects a thrown festival_meta transport failure', async () => {
+    const failure = new Error('transport unavailable')
+    queryResponses.festival_meta = () => { throw failure }
+    await expect(fetchAllFestivals()).rejects.toBe(failure)
+  })
+
+  test('rejects a rejected timetable_slots transport request', async () => {
+    const failure = new Error('slots connection lost')
+    queryResponses.timetable_slots = () => Promise.reject(failure)
+    await expect(fetchAllFestivals()).rejects.toBe(failure)
+  })
+
+  test('propagates an explicit festival_meta query error', async () => {
+    const failure = { message: 'festival_meta permission denied', code: '42501' }
+    queryResponses.festival_meta = { data: null, error: failure }
+    await expect(fetchAllFestivals()).rejects.toBe(failure)
+  })
+
+  test('propagates an explicit timetable_slots query error', async () => {
+    const failure = { message: 'timetable_slots unavailable', code: '08006' }
+    queryResponses.timetable_slots = { data: null, error: failure }
+    await expect(fetchAllFestivals()).rejects.toBe(failure)
+  })
+
+  test('rejects malformed response instead of interpreting missing data as an empty list', async () => {
+    queryResponses.festival_meta = { data: null, error: null }
+    await expect(fetchAllFestivals()).rejects.toThrow('invalid Supabase query response')
+  })
+
+  test('resolves [] for successful empty festival metadata', async () => {
+    queryResponses.festival_meta = { data: [], error: null }
+    queryResponses.timetable_slots = { data: [], error: null }
+    await expect(fetchAllFestivals()).resolves.toEqual([])
+  })
+
+  test('maps successful festivals and hydrates the deduplicated sorted artist cache', async () => {
+    queryResponses.festival_meta = { data: [MOCK_METAS[0]], error: null }
+    queryResponses.timetable_slots = {
+      data: [{ artist: 'Slowdive' }, { artist: 'Bicep' }, { artist: 'Slowdive' }],
+      error: null,
+    }
+    await expect(fetchAllFestivals()).resolves.toEqual([{
+      id: 'alpha',
+      name: 'Alpha Fest 2026',
+      location: 'Alphaville',
+      emoji: '🎪',
+      days: ['Fri Jun 5', 'Sat Jun 6'],
+      startDate: '2026-06-05',
+      endDate: '2026-06-06',
+      accentColor: '#ff0000',
+      stages: ['Main Stage', 'Side Stage'],
+      hasTimetable: true,
+    }])
+    expect(artistCache).toEqual(['Bicep', 'Slowdive'])
   })
 })
