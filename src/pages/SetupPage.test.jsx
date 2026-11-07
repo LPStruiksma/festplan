@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
@@ -81,6 +81,87 @@ describe('SetupPage plan picker hides festivals that are over', () => {
 
     expect(await screen.findByText('Next Summer')).toBeVisible()
     expect(screen.queryByText(/Past festivals/)).not.toBeInTheDocument()
+  })
+})
+
+describe('SetupPage Plan picker request failure and retry', () => {
+  it('shows an actionable alert rather than reporting an empty festival list on request failure', async () => {
+    fetchAllFestivals.mockRejectedValue(new Error('Network unavailable'))
+    renderSetup()
+
+    const error = await screen.findByRole('alert')
+    expect(error).toHaveTextContent('Could not load festivals')
+    expect(screen.getByRole('button', { name: /Retry loading festivals/i })).toBeEnabled()
+    expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('No festivals match your search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Next Summer/i })).not.toBeInTheDocument()
+  })
+
+  it('retries on request and restores an upcoming 2027 card and Build My Schedule', async () => {
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    fetchAllFestivals.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce([UPCOMING])
+    renderSetup()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Retry loading festivals/i }))
+    const card = await screen.findByRole('button', { name: /Next Summer/i })
+    expect(fetchAllFestivals).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
+
+    fireEvent.click(card)
+    const build = screen.getByRole('button', { name: /Build My Schedule/i })
+    expect(card).toHaveAttribute('aria-pressed', 'true')
+    expect(build).toBeEnabled()
+    fireEvent.click(build)
+    expect(localStorage.getItem('festplan_festival')).toBe('next')
+  })
+
+  it('displays a loading state while the user-triggered retry is pending', async () => {
+    let resolveRetry
+    fetchAllFestivals
+      .mockRejectedValueOnce(new Error('Offline'))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve }))
+    renderSetup()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Retry loading festivals/i }))
+    expect(screen.getByRole('status')).toHaveTextContent('Loading festivals')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('No upcoming festivals yet')).not.toBeInTheDocument()
+
+    await act(async () => { resolveRetry([UPCOMING]) })
+    expect(screen.getByRole('button', { name: /Next Summer/i })).toBeInTheDocument()
+    expect(screen.queryByText('Loading festivals')).not.toBeInTheDocument()
+  })
+
+  it('reserves the genuinely empty message for a successful empty retry', async () => {
+    fetchAllFestivals.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce([])
+    renderSetup()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Retry loading festivals/i }))
+    expect(await screen.findByText('No upcoming festivals yet')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(fetchAllFestivals).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not update the unmounted picker when its original request finishes later', async () => {
+    let resolveLate
+    fetchAllFestivals.mockImplementation(() => new Promise(resolve => { resolveLate = resolve }))
+    const { unmount } = renderSetup()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading festivals')
+
+    unmount()
+    await act(async () => { resolveLate([UPCOMING]) })
+    expect(screen.queryByRole('button', { name: /Next Summer/i })).not.toBeInTheDocument()
+  })
+
+  it('handles a late rejected request after unmount without showing an alert', async () => {
+    let rejectLate
+    fetchAllFestivals.mockImplementation(() => new Promise((resolve, reject) => { rejectLate = reject }))
+    const { unmount } = renderSetup()
+
+    unmount()
+    await act(async () => { rejectLate(new Error('Network unavailable')) })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
 
