@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../lib/api', () => ({ fetchTimetable: vi.fn() }))
 vi.mock('../lib/invites', () => ({ createInvite: vi.fn() }))
+vi.mock('../lib/spotify-auth', () => ({ getValidSpotifyToken: vi.fn(async () => null) }))
 vi.mock('../lib/realtime', () => ({
   useGroupSync: vi.fn(),
   useFriendsSync: vi.fn(),
