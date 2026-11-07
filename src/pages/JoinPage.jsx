@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getInvite, acceptInvite } from '../lib/invites'
@@ -46,73 +46,112 @@ export default function JoinPage({ session }) {
   // 'loading' | 'redirecting' | 'joining' | 'done' | 'error'
   const [status,   setStatus]   = useState(slug ? 'loading' : 'error')
   const [errorMsg, setErrorMsg] = useState(slug ? '' : 'No invite slug found in the URL.')
+  const [attempt, setAttempt] = useState(0)
+
 
   useEffect(() => {
     if (!slug) return
 
-    // ── ① Not logged in ─────────────────────────────────────────────────────
-    if (!session) {
-      // Persist the slug so AuthCallback can redirect back here after OAuth.
-      localStorage.setItem('festplan_pending_invite', slug)
-
-      supabase.auth.signInWithOAuth({
-        provider: 'spotify',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          scopes: 'user-library-read user-top-read',
-        },
-      })
-      return
+    let active = true
+    let timeoutId
+    const fail = message => {
+      if (!active) return
+      setErrorMsg(message)
+      setStatus('error')
     }
 
-    // ── ② Logged in — process the invite ────────────────────────────────────
+    // Save the slug for AuthCallback; a rejected OAuth initiation must not
+    // leave a signed-out visitor indefinitely on the redirect spinner.
+    if (!session) {
+      async function startOAuth() {
+        try {
+          localStorage.setItem('festplan_pending_invite', slug)
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'spotify',
+            options: {
+              redirectTo: window.location.origin + '/auth/callback',
+              scopes: 'user-library-read user-top-read',
+            },
+          })
+          if (error) fail('Spotify sign-in could not start. Check your connection and try again.')
+        } catch {
+          fail('Spotify sign-in could not start. Check your connection and try again.')
+        }
+      }
+      startOAuth()
+      return () => { active = false }
+    }
+
     async function process() {
       setStatus('joining')
 
-      // Fetch the invite (null if not found or expired)
-      const invite = await getInvite(slug)
+      let invite
+      try {
+        invite = await getInvite(slug)
+      } catch {
+        fail('We could not check this invite. Check your connection and try again.')
+        return
+      }
+      if (!active) return
       if (!invite) {
-        setStatus('error')
-        setErrorMsg("This invite link has expired or doesn't exist. Ask your friend to send a new one.")
+        fail("This invite link has expired or doesn't exist. Ask your friend to send a new one.")
         return
       }
 
-      // Edge case: the inviter opened their own link
+      // Opening your own link must never create a friends row.
       if (invite.inviter_user_id === session.user.id) {
-        // Just send them to the schedule for that festival; no friends row needed
-        localStorage.setItem(LS_FESTIVAL_KEY, invite.festival_key)
-        navigate('/schedule', { replace: true })
+        try {
+          localStorage.setItem(LS_FESTIVAL_KEY, invite.festival_key)
+          navigate('/schedule', { replace: true })
+        } catch {
+          fail('We could not open this festival. Please try again.')
+        }
         return
       }
 
-      // Create the friends entry + set festival for the joiner
-      const festKey = await acceptInvite(invite, session)
+      let festKey
+      try {
+        festKey = await acceptInvite(invite, session)
+      } catch {
+        fail('Something went wrong while joining. Please try again.')
+        return
+      }
+      if (!active) return
       if (!festKey) {
-        setStatus('error')
-        setErrorMsg('Something went wrong while joining. Please try again.')
+        fail('Something went wrong while joining. Please try again.')
         return
       }
 
-      // Set the joiner's active festival (localStorage + DB)
-      localStorage.setItem(LS_FESTIVAL_KEY, festKey)
-      await saveFestivalKey(session.user.id, festKey)
-
-      // Clean up any pending invite marker left by the OAuth flow
-      localStorage.removeItem('festplan_pending_invite')
+      // The local festival key is the schedule's source of truth; the
+      // housekeeping DB write may log a warning without throwing.
+      try {
+        localStorage.setItem(LS_FESTIVAL_KEY, festKey)
+        await saveFestivalKey(session.user.id, festKey)
+        if (!active) return
+        localStorage.removeItem('festplan_pending_invite')
+      } catch {
+        fail('We could not finish opening this festival. Please try again.')
+        return
+      }
+      if (!active) return
 
       setStatus('done')
-
-      // Brief pause so the success state is visible, then go to schedule
-      setTimeout(() => navigate('/schedule', { replace: true }), 1400)
+      timeoutId = setTimeout(() => {
+        if (active) navigate('/schedule', { replace: true })
+      }, 1400)
     }
 
     process()
-  }, [slug, session, navigate])
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+    }
+  }, [slug, session, navigate, attempt])
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // Signed out with a slug: the effect has started the OAuth redirect.
-  const view = slug && !session ? 'redirecting' : status
+  const view = slug && !session && status === 'loading' ? 'redirecting' : status
 
   return (
     <div style={{
@@ -226,9 +265,30 @@ export default function JoinPage({ session }) {
               lineHeight: 1.6,
               marginBottom: 24,
             }}>
-              {errorMsg}
+              <span role="alert">{errorMsg}</span>
             </div>
+            {slug && (
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMsg('')
+                  setStatus('loading')
+                  setAttempt(current => current + 1)
+                }}
+                style={{
+                  padding: '10px 22px', marginRight: 10,
+                  background: fa, border: 'none',
+                  borderRadius: 'var(--fp-radius-sm)',
+                  color: 'var(--fp-bg)', cursor: 'pointer',
+                  fontFamily: T.body, fontSize: 11, fontWeight: 700,
+                  letterSpacing: 2, textTransform: 'uppercase',
+                }}
+              >
+                Try Again
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => navigate('/', { replace: true })}
               style={{
                 padding: '10px 22px',
