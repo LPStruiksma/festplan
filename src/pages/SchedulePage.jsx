@@ -16,6 +16,7 @@ import { buildIcs } from '../lib/ical'
 // ── Sub-components ────────────────────────────────────────────────────────────
 import HeaderBar      from '../components/schedule/HeaderBar'
 import ConflictBanner from '../components/schedule/ConflictBanner'
+import NowNext        from '../components/schedule/NowNext'
 import MyScheduleTab  from '../components/schedule/MyScheduleTab'
 import GroupTab       from '../components/schedule/GroupTab'
 
@@ -512,6 +513,8 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
       />
 
       <div style={{ maxWidth: 940, margin: '0 auto', padding: '20px 16px' }}>
+
+        <NowNext fest={fest} schedule={finalSchedule} isLineupOnly={isLineupOnly} fa={fa} />
 
         <ConflictBanner
           conflicts={unresolvedConflicts}
