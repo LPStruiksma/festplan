@@ -13,6 +13,7 @@ import { T } from '../lib/ui'
 import { getValidSpotifyToken } from '../lib/spotify-auth'
 import { buildIcs, normalizeReminder, DEFAULT_REMINDER_MINS } from '../lib/ical'
 import { isOffline, markSynced, saveTimetableSnapshot, loadTimetableSnapshot } from '../lib/sync-state'
+import { lastReadFromCache } from '../lib/cache-source'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import HeaderBar      from '../components/schedule/HeaderBar'
@@ -199,12 +200,16 @@ export default function SchedulePage({ session }) {
         clearTimeout(slowTimer)
         if (!active) return
         if (result?.festival) {
+          // The service worker may have answered from its cache (offline, or
+          // the server slower than its timeout): show it as saved data and
+          // don't count it as a sync.
+          const servedFromCache = isOffline() ||
+            lastReadFromCache('festival_meta') || lastReadFromCache('timetable_slots')
           setFest(result.festival)
           setFestLoad('loaded')
-          setFromCache(false)
+          setFromCache(servedFromCache && !isOffline())
           saveTimetableSnapshot(festId, result.festival)
-          // A response while offline came from the service-worker cache.
-          if (!isOffline()) markSynced()
+          if (!servedFromCache) markSynced()
         } else if (festMeta && festMeta.id === festId) {
           // Saved discovery metadata is a valid lineup-only fallback for an
           // unseeded festival; a failed request never counts as absence.

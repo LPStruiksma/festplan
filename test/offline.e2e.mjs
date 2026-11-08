@@ -50,8 +50,12 @@ const SLOTS = [
   { artist: 'Synthetic Headliner', stage: 'Main', day_index: 0, start_time: '21:00', end_time: '22:30' },
   { artist: 'Someone Else', stage: 'Main', day_index: 1, start_time: '18:00', end_time: '19:00' },
 ]
-// artist_ratings is stateful, so the test can change it between reads.
+// artist_ratings and user_artists are stateful, so the test can change them
+// between reads; user_artists can be slowed down past the SW timeout (3 s).
 let ratings = []
+let artists = ['Synthetic Opener', 'Synthetic Headliner']
+let artistsDelayMs = 0
+const artistWrites = []
 const hits = []
 const api = createServer((req, res) => {
   const url = new URL(req.url, API)
@@ -66,6 +70,21 @@ const api = createServer((req, res) => {
   if (url.pathname === '/rest/v1/festival_meta') return json(wantsObject ? META : [META])
   if (url.pathname === '/rest/v1/timetable_slots') return json(SLOTS)
   if (url.pathname === '/rest/v1/artist_ratings' && req.method === 'GET') return json(ratings)
+  if (url.pathname === '/rest/v1/user_artists') {
+    if (req.method === 'GET') {
+      const rows = artists.map(artist_name => ({ artist_name }))
+      return void setTimeout(() => json(rows), artistsDelayMs)
+    }
+    artistWrites.push(req.method)
+    if (req.method === 'DELETE') artists = []
+    let body = ''
+    req.on('data', c => { body += c })
+    req.on('end', () => {
+      if (req.method === 'POST' && body) artists = artists.concat(JSON.parse(body).map(r => r.artist_name))
+      json([], req.method === 'POST' ? 201 : 200)
+    })
+    return
+  }
   if (url.pathname.startsWith('/rest/v1/')) return json(wantsObject ? null : [], req.method === 'GET' ? 200 : 201)
   if (url.pathname === '/auth/v1/user') return json(USER)
   if (url.pathname === '/auth/v1/token') return json(session(3600))
@@ -175,12 +194,44 @@ try {
   assert.deepEqual(await readRatings(), ratings, 'online read after a server change is fresh, not the cached copy')
   console.log('[online] user-table read after a server change is fresh')
 
+  // Slow network (festplan#82): Setup must never write a cache-served
+  // artist list back over newer server data.
+  // (The chips are hidden here because the fake backend has no Spotify
+  // token, so read the list Setup keeps in localStorage.)
+  const shownArtists = () => page.evaluate(() => JSON.parse(localStorage.getItem('festplan_artists') || '[]'))
+  const settle = ms => new Promise(r => setTimeout(r, ms))
+  await page.goto(`${APP}/setup`)
+  await page.getByText('Your Spotify artists', { exact: false }).first().waitFor({ timeout: 15000 })
+  await settle(2500)
+  assert.deepEqual(artistWrites, [], 'loading Setup writes nothing back')
+  artists = [...artists, 'Added Elsewhere']   // another device adds an artist
+  artistsDelayMs = 5000                        // slower than the SW's 3 s timeout
+  await page.reload()
+  await settle(8000)  // past the SW timeout, the save debounce and the late response
+  assert.deepEqual(artistWrites, [], 'a cache-served list is not written back')
+  assert.deepEqual(artists, ['Synthetic Opener', 'Synthetic Headliner', 'Added Elsewhere'], 'server list intact')
+  assert.deepEqual(await shownArtists(), ['Synthetic Opener', 'Synthetic Headliner'], 'this device keeps its own list')
+  console.log('[slow network] Setup served a cached list and wrote nothing back; server list intact')
+  artistsDelayMs = 0
+  await page.reload()
+  await settle(2500)
+  assert.ok((await shownArtists()).includes('Added Elsewhere'), "a fresh read shows the other device's artist")
+  assert.deepEqual(artistWrites, [], 'still nothing written')
+  console.log('[online] fresh Setup read shows the artist added elsewhere')
+  await page.goto(`${APP}/schedule`)
+  await expectSchedule(page, 'online, back on the schedule')
+
   // 2. Offline, timetable only in the service worker's cache
   await context.setOffline(true)
   await page.evaluate(fest => localStorage.removeItem(`festplan_timetable_${fest}`), FEST)
   await page.reload()
   await expectSchedule(page, 'offline, service-worker cache')
   assert.deepEqual(await readRatings(), [{ artist_name: 'Synthetic Opener', rating: 5 }], 'offline read falls back to the cached copy')
+  const cacheMark = await page.evaluate(async api => {
+    const r = await fetch(`${api}/rest/v1/artist_ratings?select=artist_name,rating`, { headers: { apikey: 'synthetic-anon-key' } })
+    return r.headers.get('x-festplan-from-cache')
+  }, API)
+  assert.equal(cacheMark, '1', 'the app can see that a response came from the service-worker cache')
   const badge = await page.getByRole('status', { name: 'Offline status' }).innerText()
   console.log(`[offline] badge: ${badge.replace(/\s+/g, ' ')}`)
   assert.match(badge, /Offline, last synced 14:20/)

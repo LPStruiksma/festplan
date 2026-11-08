@@ -38,6 +38,13 @@ describe('OfflineBadge', () => {
     expect(badge()).toHaveTextContent("2 changes will sync when you're back online.")
   })
 
+  it('updates the count as soon as a write is queued', () => {
+    render(<OfflineBadge online={false} />)
+    expect(badge()).toHaveTextContent('Changes you make will sync')
+    act(() => { pushPendingWrite({ type: 'rating', args: ['u', 'f', 'A', 3], seq: 1 }) })
+    expect(badge()).toHaveTextContent("1 change will sync when you're back online.")
+  })
+
   it('shows when the saved timetable is used although the browser is online', () => {
     render(<OfflineBadge online fromCache />)
     expect(badge()).toHaveTextContent("Couldn't reach FestPlan")

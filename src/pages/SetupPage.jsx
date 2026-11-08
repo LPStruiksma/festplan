@@ -5,6 +5,7 @@ import { FEST_COLORS, norm } from '../lib/festivals'
 import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, ensureFestivalIngested } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
+import { lastReadFromCache } from '../lib/cache-source'
 import { isPastFestival, splitPastFestivals } from '../lib/upcoming'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -60,6 +61,11 @@ export default function SetupPage({ session, today = new Date() }) {
   // True once the initial load (Spotify + Supabase) has resolved.
   // Used to prevent the auto-save effect from firing during first paint.
   const [artistsLoaded, setArtistsLoaded] = useState(false)
+  // True once the list holds something that must reach Supabase: an edit by
+  // the user, or a first-visit seed from Spotify. A list that was only loaded
+  // is never written back, so a stale copy (service-worker cache on a slow or
+  // missing network, or an older read) can't overwrite newer artists.
+  const [artistsDirty, setArtistsDirty] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -79,14 +85,26 @@ export default function SetupPage({ session, today = new Date() }) {
       // null = fetch failed; [] = fetch succeeded but no saved list yet
       const saved = supabaseResult.status === 'fulfilled' ? supabaseResult.value : null
 
-      if (saved && saved.length > 0) {
+      // The service worker answered from its cache (offline, or slower than
+      // its timeout): this device's own list is at least as new.
+      const savedFromCache = saved !== null && lastReadFromCache('user_artists')
+      const localList = loadArtistsFromCache()
+
+      if (saved && saved.length > 0 && !(savedFromCache && localList.length)) {
         // Returning user — restore their curated Supabase list.
         setMyArtists(saved)
-        setSyncStatus('synced')
-      } else {
-        // First visit or Supabase unreachable — seed from Spotify.
+        if (!savedFromCache) setSyncStatus('synced')
+      } else if (saved && !savedFromCache) {
+        // First visit (the server says no saved list yet) — seed from Spotify
+        // and save that seed.
+        setMyArtists(spotifyArtists)
+        if (spotifyArtists.length) setArtistsDirty(true)
+      } else if (!localList.length) {
+        // Supabase unreachable or cache-only, nothing on this device: show
+        // the Spotify list, but don't save it over whatever the server has.
         setMyArtists(spotifyArtists)
       }
+      // Otherwise keep this device's list as it is.
 
       if (spotifyResult.status === 'rejected') {
         setFetchError(spotifyResult.reason?.message || 'Spotify session expired. Please sign in again.')
@@ -125,7 +143,7 @@ export default function SetupPage({ session, today = new Date() }) {
   // Debounced Supabase write — coalesces rapid add/remove actions into a
   // single network request. Shows amber pill while pending, green on success.
   useEffect(() => {
-    if (!artistsLoaded) return
+    if (!artistsLoaded || !artistsDirty) return
     const userId = session?.user?.id
     if (!userId) return
 
@@ -136,7 +154,7 @@ export default function SetupPage({ session, today = new Date() }) {
     }, 800)
 
     return () => clearTimeout(timer)
-  }, [myArtists, artistsLoaded, session])
+  }, [myArtists, artistsLoaded, artistsDirty, session])
 
   const runDiscovery = useCallback(async (artists) => {
     if (!artists.length) return
@@ -169,6 +187,7 @@ export default function SetupPage({ session, today = new Date() }) {
     const t = name.trim()
     if (t && !myArtists.some(m => norm(m) === norm(t))) {
       setMyArtists(p => [...p, t])
+      setArtistsDirty(true)
     }
     setArtistInput('')
     setShowHints(false)
@@ -558,7 +577,7 @@ export default function SetupPage({ session, today = new Date() }) {
                     }}>
                       {a}
                       <span
-                        onClick={() => setMyArtists(p => p.filter(x => x !== a))}
+                        onClick={() => { setMyArtists(p => p.filter(x => x !== a)); setArtistsDirty(true) }}
                         style={{ cursor: 'pointer', opacity: 0.4, fontSize: 16, lineHeight: 1, transition: 'opacity 0.15s' }}
                         onMouseEnter={e => e.currentTarget.style.opacity = 1}
                         onMouseLeave={e => e.currentTarget.style.opacity = 0.4}

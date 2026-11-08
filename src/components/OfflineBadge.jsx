@@ -1,6 +1,6 @@
 import React from 'react'
 import { T } from '../lib/ui'
-import { useOnline, getLastSynced, getPendingWrites } from '../lib/sync-state'
+import { useOnline, getLastSynced, usePendingCount } from '../lib/sync-state'
 
 /**
  * Small notice on the schedule page when FestPlan is working from what it
@@ -25,11 +25,11 @@ function formatSynced(at, now = Date.now()) {
 
 export default function OfflineBadge({ fromCache = false, online: onlineOverride, now }) {
   const browserOnline = useOnline()
+  const pending = usePendingCount()
   const online = onlineOverride ?? browserOnline
   if (online && !fromCache) return null
 
   const synced = getLastSynced()
-  const pending = getPendingWrites().length
   const title = online ? "Couldn't reach FestPlan" : 'Offline'
 
   return (

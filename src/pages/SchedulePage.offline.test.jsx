@@ -5,6 +5,7 @@ import '@testing-library/jest-dom'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 vi.mock('../lib/api', () => ({ fetchTimetable: vi.fn() }))
+vi.mock('../lib/cache-source', () => ({ lastReadFromCache: vi.fn(() => false) }))
 vi.mock('../lib/invites', () => ({ createInvite: vi.fn() }))
 vi.mock('../lib/spotify-auth', () => ({ getValidSpotifyToken: vi.fn(async () => null) }))
 vi.mock('../lib/realtime', () => ({
@@ -37,6 +38,7 @@ vi.mock('../components/schedule/GroupTab', () => ({ default: () => null }))
 
 import { fetchTimetable } from '../lib/api'
 import { loadTimetableSnapshot, getLastSynced } from '../lib/sync-state'
+import { lastReadFromCache } from '../lib/cache-source'
 import SchedulePage from './SchedulePage'
 
 const FESTIVAL_ID = 'synthetic-plan-festival'
@@ -66,6 +68,7 @@ beforeEach(() => {
   localStorage.setItem('festplan_festival', FESTIVAL_ID)
   localStorage.setItem('festplan_artists', JSON.stringify(['Synthetic Artist']))
   fetchTimetable.mockReset()
+  lastReadFromCache.mockReturnValue(false)
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -127,6 +130,16 @@ describe('SchedulePage offline (synthetic)', () => {
     expect(await screen.findByText('Timetable published: Synthetic Artist')).toBeInTheDocument()
     expect(getLastSynced()).toBe(1000)
     expect(screen.getByRole('status', { name: 'Offline status' })).toHaveTextContent('Offline')
+  })
+
+  test('online but slow: a timetable the service worker served from cache is not a sync', async () => {
+    localStorage.setItem('festplan_last_synced', '1000')
+    lastReadFromCache.mockImplementation(t => t === 'timetable_slots')
+    fetchTimetable.mockResolvedValue({ festival: FESTIVAL })
+    renderSchedule()
+    expect(await screen.findByText('Timetable published: Synthetic Artist')).toBeInTheDocument()
+    expect(getLastSynced()).toBe(1000)
+    expect(screen.getByRole('status', { name: 'Offline status' })).toHaveTextContent("Couldn't reach FestPlan")
   })
 
   test('calendar export uses the chosen reminder and remembers it', async () => {
