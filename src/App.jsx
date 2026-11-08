@@ -3,7 +3,8 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/profile'
-import { SyncProvider, drainPendingWrites } from './lib/sync-state'
+import { SyncProvider, drainPendingWrites, isOffline } from './lib/sync-state'
+import { readStoredSession, resolveSession } from './lib/offline-session'
 import { usePwaInstallPrompt, usePwaUpdate } from './lib/pwa-install'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
 import LoginPage from './pages/LoginPage'
@@ -220,17 +221,25 @@ function LoadingScreen() {
 }
 
 export default function App() {
-  const [session, setSession] = useState(undefined)
+  // Offline at boot: open the app with the stored session right away, since
+  // getSession() would first retry the token refresh for up to ~30 s.
+  const [session, setSession] = useState(() =>
+    (isOffline() && readStoredSession(globalThis.localStorage, supabase.auth.storageKey)) || undefined)
   const { pathname } = useLocation()
   const drainedRef = useRef(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+    // Offline with an expired access token, supabase-js can't refresh and
+    // reports no session; keep the stored one so the cached schedule still
+    // opens on the festival ground (see lib/offline-session.js).
+    const stored = () => readStoredSession(globalThis.localStorage, supabase.auth.storageKey)
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      setSession(resolveSession(session, { offline: isOffline(), error, stored: stored() }))
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => setSession(session)
+      (event, session) => setSession(resolveSession(session, { offline: isOffline(), stored: stored(), event }))
     )
 
     return () => subscription.unsubscribe()
