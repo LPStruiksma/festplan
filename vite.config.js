@@ -14,15 +14,21 @@ import { VitePWA } from 'vite-plugin-pwa'
 //                         safe because changes come from this device only)
 // Everything else      → NetworkOnly  (auth, realtime, maps, etc.)
 
-const EDGE_FN_PATTERN = /\/functions\/v1\//
+// Workbox only applies a RegExp route to a cross-origin request (Supabase is
+// on another origin) when the match starts at the beginning of the URL, so
+// every pattern is anchored with the origin part. An unanchored
+// /\/rest\/v1\// silently never matched, which left the timetable uncached.
+const ORIGIN = String.raw`^https?:\/\/[^/]+`
+
+const EDGE_FN_PATTERN = new RegExp(`${ORIGIN}/functions/v1/`)
 
 // Admin-edited content: must be fresh from the network when reachable.
 const FESTIVAL_TABLES = ['festival_meta', 'timetable_slots']
-const FESTIVAL_REST_PATTERN = new RegExp(`/rest/v1/(${FESTIVAL_TABLES.join('|')})`)
+const FESTIVAL_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${FESTIVAL_TABLES.join('|')})`)
 
 // User-owned tables: safe to serve from cache while revalidating in bg.
 const USER_TABLES = ['user_artists', 'user_schedules', 'artist_ratings']
-const USER_REST_PATTERN = new RegExp(`/rest/v1/(${USER_TABLES.join('|')})`)
+const USER_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${USER_TABLES.join('|')})`)
 
 // https://vite.dev/config/
 export default defineConfig({

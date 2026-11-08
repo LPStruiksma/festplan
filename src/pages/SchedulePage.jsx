@@ -11,12 +11,15 @@ import { createInvite } from '../lib/invites'
 import { useGroupSync, useFriendsSync } from '../lib/realtime'
 import { T } from '../lib/ui'
 import { getValidSpotifyToken } from '../lib/spotify-auth'
-import { buildIcs } from '../lib/ical'
+import { buildIcs, normalizeReminder, DEFAULT_REMINDER_MINS } from '../lib/ical'
+import { isOffline, markSynced, saveTimetableSnapshot, loadTimetableSnapshot } from '../lib/sync-state'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import HeaderBar      from '../components/schedule/HeaderBar'
 import ConflictBanner from '../components/schedule/ConflictBanner'
 import NowNext        from '../components/schedule/NowNext'
+import ReminderSetting from '../components/schedule/ReminderSetting'
+import OfflineBadge   from '../components/OfflineBadge'
 import MyScheduleTab  from '../components/schedule/MyScheduleTab'
 import GroupTab       from '../components/schedule/GroupTab'
 
@@ -135,6 +138,10 @@ export async function createSchedulePlaylist({ token, fest, schedule, fetchImpl 
    rendering is delegated to components/schedule/*.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+const LS_REMINDER_KEY = 'festplan_reminder_mins'
+// Show the saved timetable if the server takes longer than this.
+const SLOW_NETWORK_MS = 6000
+
 export default function SchedulePage({ session }) {
   const navigate = useNavigate()
   const userId = session?.user?.id
@@ -152,17 +159,52 @@ export default function SchedulePage({ session }) {
   const [fest, setFest] = useState(null)
   const [festLoad, setFestLoad] = useState(festId ? 'loading' : 'missing')
   const [retryAttempt, setRetryAttempt] = useState(0)
+  // True when the timetable on screen is the copy saved on this device.
+  const [fromCache, setFromCache] = useState(false)
+  const [reminderMins, setReminderMins] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_REMINDER_KEY)
+      return saved === null ? DEFAULT_REMINDER_MINS : normalizeReminder(saved)
+    } catch { return DEFAULT_REMINDER_MINS }
+  })
 
   useEffect(() => {
     if (!festId) return
 
     let active = true
+    // The timetable saved on this device the last time it loaded. On the
+    // festival ground it is what keeps the schedule usable without signal.
+    const snap = loadTimetableSnapshot(festId)
+    const showSnapshot = () => {
+      setFest(snap.festival)
+      setFromCache(true)
+      setFestLoad('loaded')
+    }
+    // Offline: don't wait on the network at all. (supabase-js would first
+    // retry an expired token's refresh for up to ~30 s before each query.)
+    if (snap && isOffline()) {
+      showSnapshot()
+      return () => { active = false }
+    }
+    // Patchy signal: show the saved copy if the server is slow, and swap in
+    // the fresh timetable when it arrives.
+    let settled = false
+    const slowTimer = snap
+      ? setTimeout(() => { if (active && !settled) showSnapshot() }, SLOW_NETWORK_MS)
+      : null
+
     fetchTimetable(festId)
       .then(result => {
+        settled = true
+        clearTimeout(slowTimer)
         if (!active) return
         if (result?.festival) {
           setFest(result.festival)
           setFestLoad('loaded')
+          setFromCache(false)
+          saveTimetableSnapshot(festId, result.festival)
+          // A response while offline came from the service-worker cache.
+          if (!isOffline()) markSynced()
         } else if (festMeta && festMeta.id === festId) {
           // Saved discovery metadata is a valid lineup-only fallback for an
           // unseeded festival; a failed request never counts as absence.
@@ -186,12 +228,20 @@ export default function SchedulePage({ session }) {
         }
       })
       .catch(() => {
+        settled = true
+        clearTimeout(slowTimer)
+        if (!active) return
+        // No network and no service-worker copy: fall back to the saved copy.
+        if (snap) {
+          showSnapshot()
+          return
+        }
         // Deliberately do not surface backend details or discard the festival
         // choice. Only the Retry button starts another request.
-        if (active) setFestLoad('error')
+        setFestLoad('error')
       })
 
-    return () => { active = false }
+    return () => { active = false; clearTimeout(slowTimer) }
   }, [festId, festMeta, retryAttempt])
 
   const isLineupOnly = fest ? fest.hasTimetable === false : false
@@ -383,7 +433,7 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
 
   // ── Export: iCal ─────────────────────────────────────────────────────────
   const exportCalendar = () => {
-    const ics = buildIcs(fest, finalSchedule, new Date())
+    const ics = buildIcs(fest, finalSchedule, new Date(), { reminderMins })
 
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -514,7 +564,16 @@ ${byDay.map(({ d, slots }) => `<h2>${d}</h2>${slots.map(s => `<div class="slot">
 
       <div style={{ maxWidth: 940, margin: '0 auto', padding: '20px 16px' }}>
 
+        <OfflineBadge fromCache={fromCache} />
+
         <NowNext fest={fest} schedule={finalSchedule} isLineupOnly={isLineupOnly} fa={fa} />
+
+        {!isLineupOnly && (
+          <ReminderSetting value={reminderMins} onChange={mins => {
+            setReminderMins(mins)
+            try { localStorage.setItem(LS_REMINDER_KEY, String(mins)) } catch { /* storage unavailable */ }
+          }} />
+        )}
 
         <ConflictBanner
           conflicts={unresolvedConflicts}

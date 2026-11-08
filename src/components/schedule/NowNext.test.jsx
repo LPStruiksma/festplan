@@ -39,6 +39,22 @@ describe('NowNext', () => {
     expect(panel()).toHaveTextContent('Your first pick on Sat Jun 27 is Saturday Act · 16:00 · Bravo.')
   })
 
+  it('says "No picks today" when today has none at all', () => {
+    const schedule = [pick('Saturday Act', 1, '16:00', '17:00', 'Bravo')]
+    render(<NowNext fest={FEST} schedule={schedule} now={ams(6, 26, 12, 0)} />)
+    expect(panel()).toHaveTextContent('No picks today. Your first pick on Sat Jun 27 is Saturday Act')
+    expect(panel()).not.toHaveTextContent('No more picks today')
+  })
+
+  it('keeps keys unique when the same artist plays twice at once', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const schedule = [pick('Twin', 0, '18:00', '19:00', 'Alpha'), pick('Twin', 0, '18:30', '19:30', 'Bravo')]
+    render(<NowNext fest={FEST} schedule={schedule} now={ams(6, 26, 18, 45)} />)
+    expect(screen.getAllByText('Twin')).toHaveLength(4)
+    expect(spy.mock.calls.flat().join(' ')).not.toMatch(/same key/i)
+    spy.mockRestore()
+  })
+
   it('says when there is nothing left', () => {
     render(<NowNext fest={FEST} schedule={SCHEDULE} now={ams(6, 28, 12, 0)} />)
     expect(panel()).toHaveTextContent('That was your last pick.')

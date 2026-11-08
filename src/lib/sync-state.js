@@ -29,6 +29,14 @@
 //     available.  retry() in useSync() also calls it when the user taps
 //     the error pill.
 //
+//  5. Offline (festival ground, no signal): a write made while the browser
+//     reports offline is queued straight away instead of retried, and
+//     SyncProvider drains the queue when the 'online' event fires.  Every
+//     successful write or data load stamps festplan_last_synced, which the
+//     schedule page shows as "Offline, last synced HH:MM".  The last loaded
+//     timetable is kept per festival (saveTimetableSnapshot) so the schedule
+//     still renders when the network and the service-worker cache both fail.
+//
 // ── Handler registry ────────────────────────────────────────────────────────
 //  schedule-store.js and profile.js each call registerWriteHandler(type, fn)
 //  at module-load time.  drainPendingWrites() uses this registry to replay
@@ -132,6 +140,61 @@ function dropPendingWrite(payload) {
 }
 
 export function getPendingWrites()   { return loadPending() }
+
+// ── Offline helpers ──────────────────────────────────────────────────────────
+
+const LS_LAST_SYNCED_KEY = 'festplan_last_synced'
+const LS_TIMETABLE_PREFIX = 'festplan_timetable_'
+
+/** True only when the browser positively reports no network. */
+export function isOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
+/** Remember when data last reached or came from the server. */
+export function markSynced(at = Date.now()) {
+  try { localStorage.setItem(LS_LAST_SYNCED_KEY, String(at)) } catch { /* storage unavailable */ }
+}
+
+/** Epoch ms of the last successful sync, or null. */
+export function getLastSynced() {
+  try {
+    const n = Number(localStorage.getItem(LS_LAST_SYNCED_KEY))
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch { return null }
+}
+
+/** Keep the last timetable that loaded for a festival, for offline use. */
+export function saveTimetableSnapshot(festId, festival, at = Date.now()) {
+  if (!festId || !festival) return
+  try {
+    localStorage.setItem(LS_TIMETABLE_PREFIX + festId, JSON.stringify({ savedAt: at, festival }))
+  } catch { /* storage full or unavailable: the network copy still works */ }
+}
+
+/** { savedAt, festival } saved for this festival, or null. */
+export function loadTimetableSnapshot(festId) {
+  if (!festId) return null
+  try {
+    const snap = JSON.parse(localStorage.getItem(LS_TIMETABLE_PREFIX + festId) || 'null')
+    return snap && snap.festival && snap.festival.id === festId ? snap : null
+  } catch { return null }
+}
+
+/** Live navigator.onLine as React state. */
+export function useOnline() {
+  const [online, setOnline] = useState(() => !isOffline())
+  useEffect(() => {
+    const update = () => setOnline(!isOffline())
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+  return online
+}
 export function clearPendingWrites() { localStorage.removeItem(LS_PENDING_KEY) }
 
 // ── Write handler registry ───────────────────────────────────────────────────
@@ -199,12 +262,17 @@ export async function withSync(fn, payload) {
   if (_status !== 'error') { _status = 'syncing'; _notify() }
 
   let lastErr
-  for (const delay of BACKOFF_MS) {
+  // With no network every retry would fail too: queue at once, and the
+  // 'online' event replays it (see SyncProvider).
+  const delays = isOffline() ? [] : BACKOFF_MS
+  if (!delays.length) lastErr = new Error('offline')
+  for (const delay of delays) {
     if (delay) await new Promise(r => setTimeout(r, delay))
     try {
       await fn()
       // Success path
       dropPendingWrite(payload)
+      markSynced()
       _inflight = Math.max(0, _inflight - 1)
       if (_inflight === 0 && _status === 'syncing') { _status = 'idle'; _notify() }
       return
@@ -219,7 +287,7 @@ export async function withSync(fn, payload) {
   pushPendingWrite(payload)
   _status = 'error'
   _notify()
-  console.error('[festplan] withSync gave up after 3 attempts:', lastErr?.message)
+  console.error(`[festplan] withSync queued the write after ${delays.length} attempt(s):`, lastErr?.message)
 }
 
 // ── Drain pending writes ──────────────────────────────────────────────────────
@@ -271,6 +339,13 @@ export function SyncProvider({ children }) {
   const [status, setStatus] = useState('idle')
 
   useEffect(() => _subscribe(setStatus), [])
+
+  // Back from the festival field: replay what was queued while offline.
+  useEffect(() => {
+    const onOnline = () => { if (getPendingWrites().length) drainPendingWrites() }
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
 
   const retry = useCallback(async () => {
     const pending = getPendingWrites()

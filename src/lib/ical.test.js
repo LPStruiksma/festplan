@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildIcs, escapeText, foldLine } from './ical'
+import { buildIcs, escapeText, foldLine, normalizeReminder } from './ical'
 
 const fest = { id: 'testfest', name: 'Test Fest 2026', startDate: '2026-04-10', days: ['Fri Apr 10', 'Sat Apr 11'] }
 const NOW = new Date(2026, 3, 1, 12, 0, 0)
@@ -207,5 +207,45 @@ describe('buildIcs UIDs for non-ASCII names', () => {
   it('keeps UIDs for plain ASCII names unchanged', () => {
     const ics = buildIcs(fest, [slot('Big Thief', 'Main Stage', 0, '21:30', '23:00')], NOW)
     expect(uids(ics)).toEqual(['UID:testfest-d0-2130-main-stage-big-thief@festplan.app'])
+  })
+})
+
+describe('buildIcs reminders (VALARM)', () => {
+  const remFest = { id: 'f', name: 'Fest', startDate: '2026-06-26', days: ['Fri'] }
+  const one = [{ artist: 'Bicep', stage: 'Main', day: 0, start: '21:00', end: '22:00' }]
+  const alarms = ics => ics.split('\r\n').filter(l => l.startsWith('TRIGGER:'))
+
+  it('adds one display alarm per pick, 15 minutes before by default', () => {
+    const two = [...one, { artist: 'Fred', stage: 'Club', day: 0, start: '23:00', end: '23:59' }]
+    const ics = buildIcs(remFest, two, NOW)
+    expect(alarms(ics)).toEqual(['TRIGGER:-PT15M', 'TRIGGER:-PT15M'])
+    const lines = ics.split('\r\n')
+    const ev = lines.slice(lines.indexOf('BEGIN:VEVENT'), lines.indexOf('END:VEVENT') + 1)
+    expect(ev.slice(-6)).toEqual([
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Bicep @ Main', 'TRIGGER:-PT15M', 'END:VALARM', 'END:VEVENT',
+    ])
+  })
+
+  it('supports 0 and 30 minutes, and none', () => {
+    expect(alarms(buildIcs(remFest, one, NOW, { reminderMins: 0 }))).toEqual(['TRIGGER:PT0M'])
+    expect(alarms(buildIcs(remFest, one, NOW, { reminderMins: 30 }))).toEqual(['TRIGGER:-PT30M'])
+    const none = buildIcs(remFest, one, NOW, { reminderMins: null })
+    expect(none).not.toContain('VALARM')
+  })
+
+  it('falls back to 15 minutes for an unsupported value', () => {
+    expect(alarms(buildIcs(remFest, one, NOW, { reminderMins: 7 }))).toEqual(['TRIGGER:-PT15M'])
+    expect(alarms(buildIcs(remFest, one, NOW, { reminderMins: 'abc' }))).toEqual(['TRIGGER:-PT15M'])
+  })
+
+  it('escapes the alarm text', () => {
+    const ics = buildIcs(remFest, [{ ...one[0], artist: 'Tyler, The Creator' }], NOW)
+    expect(ics).toContain('DESCRIPTION:Tyler\\, The Creator @ Main')
+  })
+})
+
+describe('normalizeReminder', () => {
+  it('keeps 0/15/30 and null, defaults the rest to 15', () => {
+    expect([0, 15, 30, '30', null, undefined, 5].map(normalizeReminder)).toEqual([0, 15, 30, 30, null, 15, 15])
   })
 })

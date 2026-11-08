@@ -28,6 +28,10 @@ function useClock(fixed) {
 
 const where = slot => [slot.start, slot.stage].filter(Boolean).join(' · ')
 
+// Stable per-slot key: the same artist can play twice (two days, or a DJ set
+// and a live set), so the artist name alone is not unique.
+const slotKey = slot => [slot.day, slot.start, slot.stage, slot.artist].join('|')
+
 function Row({ label, color, children }) {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 0' }}>
@@ -47,7 +51,8 @@ export default function NowNext({ fest, schedule, isLineupOnly, fa = 'var(--fp-t
   const r = computeNowNext({ fest, schedule, now: clock, tz })
   if (r.status !== 'live') return null
 
-  const { playing, next, clashes } = r
+  const { playing, next, clashes, dayIndex } = r
+  const hadPicksToday = (schedule || []).some(s => s?.day === dayIndex && s.start)
   const dim = { color: 'var(--fp-text-dim)' }
   const nextDay = next && !next.today ? fest?.days?.[next.slot.day] : ''
 
@@ -66,7 +71,7 @@ export default function NowNext({ fest, schedule, isLineupOnly, fa = 'var(--fp-t
       }}>Now &amp; next</div>
 
       {playing.map(({ slot, minsLeft }) => (
-        <Row key={`now-${slot.artist}`} label="Now" color={fa}>
+        <Row key={`now-${slotKey(slot)}`} label="Now" color={fa}>
           <strong>{slot.artist}</strong>
           {slot.stage && <span style={dim}> · {slot.stage}</span>}
           <span style={dim}> · {formatDuration(minsLeft)} left</span>
@@ -84,7 +89,7 @@ export default function NowNext({ fest, schedule, isLineupOnly, fa = 'var(--fp-t
 
       {next && !next.today && (
         <Row label="Next" color="var(--fp-text-dim)">
-          <span style={dim}>No more picks today. </span>
+          <span style={dim}>{hadPicksToday ? 'No more picks today. ' : 'No picks today. '}</span>
           Your first pick{nextDay ? ` on ${nextDay}` : ''} is <strong>{next.slot.artist}</strong>
           {where(next.slot) && <span style={dim}> · {where(next.slot)}</span>}.
         </Row>
@@ -97,7 +102,7 @@ export default function NowNext({ fest, schedule, isLineupOnly, fa = 'var(--fp-t
       )}
 
       {clashes.map(([a, b]) => (
-        <div key={`clash-${a.artist}-${b.artist}`} role="note" style={{
+        <div key={`clash-${slotKey(a)}-${slotKey(b)}`} role="note" style={{
           marginTop: 8, fontSize: 12, lineHeight: 1.5, color: 'var(--fp-warn)',
         }}>
           Heads-up: <strong>{a.artist}</strong> ({a.start}–{a.end}) and <strong>{b.artist}</strong> ({b.start}–{b.end}) overlap in the next 2 hours.

@@ -7,7 +7,15 @@ import {
   drainPendingWrites,
   registerWriteHandler,
   resetSyncError,
+  isOffline,
+  markSynced,
+  getLastSynced,
+  saveTimetableSnapshot,
+  loadTimetableSnapshot,
+  SyncProvider,
 } from './sync-state'
+import { createElement } from 'react'
+import { render } from '@testing-library/react'
 
 // A fake server: the rating handler stores the last value per artist and can
 // be switched offline so every attempt throws.
@@ -395,5 +403,65 @@ describe('stored state shared by reloads and tabs', () => {
     offline = false
     await settle(saveRating('u1', 'lowlands', 'X', 2))
     expect(getPendingWrites()).toEqual([])
+  })
+})
+
+
+describe('offline helpers', () => {
+  const setOnLine = value => vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(value)
+
+  it('isOffline follows navigator.onLine', () => {
+    setOnLine(false)
+    expect(isOffline()).toBe(true)
+    setOnLine(true)
+    expect(isOffline()).toBe(false)
+  })
+
+  it('remembers the last sync time', () => {
+    expect(getLastSynced()).toBeNull()
+    markSynced(1782475200000)
+    expect(getLastSynced()).toBe(1782475200000)
+  })
+
+  it('a successful write stamps the last sync time', async () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 26, 12, 0)))
+    await settle(saveRating('u1', 'fest', 'Bicep', 4))
+    expect(getLastSynced()).toBe(Date.UTC(2026, 5, 26, 12, 0))
+  })
+
+  it('a write made while offline is queued at once, without retries', async () => {
+    setOnLine(false)
+    offline = true
+    await saveRating('u1', 'fest', 'Bicep', 4)  // no timers needed: no back-off
+    expect(ratingHandler).not.toHaveBeenCalled()
+    expect(getPendingWrites()).toMatchObject([{ type: 'rating', args: ['u1', 'fest', 'Bicep', 4] }])
+  })
+
+  it("SyncProvider replays queued writes when the 'online' event fires", async () => {
+    setOnLine(false)
+    offline = true
+    await saveRating('u1', 'fest', 'Bicep', 4)
+    render(createElement(SyncProvider, null, null))
+    setOnLine(true)
+    offline = false
+    window.dispatchEvent(new Event('online'))
+    await vi.runAllTimersAsync()
+    expect(server['u1|fest|Bicep']).toBe(4)
+    expect(getPendingWrites()).toEqual([])
+  })
+
+  it('keeps a timetable snapshot per festival', () => {
+    const festival = { id: 'lowlands', name: 'Lowlands', lineup: [{ artist: 'A' }] }
+    saveTimetableSnapshot('lowlands', festival, 123)
+    expect(loadTimetableSnapshot('lowlands')).toEqual({ savedAt: 123, festival })
+    expect(loadTimetableSnapshot('other')).toBeNull()
+    expect(loadTimetableSnapshot(null)).toBeNull()
+  })
+
+  it('ignores a corrupt or mismatched snapshot', () => {
+    localStorage.setItem('festplan_timetable_x', '{bad json')
+    expect(loadTimetableSnapshot('x')).toBeNull()
+    localStorage.setItem('festplan_timetable_y', JSON.stringify({ savedAt: 1, festival: { id: 'z' } }))
+    expect(loadTimetableSnapshot('y')).toBeNull()
   })
 })

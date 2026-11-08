@@ -93,13 +93,39 @@ const toIcalUtc = d =>
   `${d.getUTCFullYear()}${pad2(d.getUTCMonth()+1)}${pad2(d.getUTCDate())}` +
   `T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`
 
+// Reminder choices offered in the app, in minutes before a set starts.
+export const REMINDER_CHOICES = [0, 15, 30]
+export const DEFAULT_REMINDER_MINS = 15
+
+/** A valid reminder (0, 15 or 30) or null for none; anything else → default. */
+export function normalizeReminder(mins) {
+  if (mins === null) return null
+  const n = Number(mins)
+  return REMINDER_CHOICES.includes(n) ? n : DEFAULT_REMINDER_MINS
+}
+
+// One display alarm (RFC 5545 §3.6.6) `mins` before the event starts.
+function alarmLines(mins, text) {
+  return [
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${escapeText(text)}`,
+    mins === 0 ? 'TRIGGER:PT0M' : `TRIGGER:-PT${mins}M`,
+    'END:VALARM',
+  ]
+}
+
 /**
  * @param {object} fest      festival ({ id, name, startDate?, days })
  * @param {Array}  schedule  slots ({ artist, stage, day, start, end }); not mutated
  * @param {Date}   now       export time, used for DTSTAMP
+ * @param {object} [opts]
+ * @param {number|null} [opts.reminderMins=15]  alarm 0, 15 or 30 min before
+ *                           each set; null leaves alarms out
  * @returns {string}         the .ics file text (CRLF line endings)
  */
-export function buildIcs(fest, schedule, now) {
+export function buildIcs(fest, schedule, now, { reminderMins = DEFAULT_REMINDER_MINS } = {}) {
+  const reminder = normalizeReminder(reminderMins)
   const resolveSlotDate = slotDateResolver(fest)
   const dtstamp = toIcalUtc(now)
 
@@ -121,6 +147,7 @@ export function buildIcs(fest, schedule, now) {
         // Based on the slot, not export position, so re-imports update events.
         `UID:${slug(fest.id)}-d${s.day}-${s.start.replace(':', '')}-${slug(s.stage)}-${slug(s.artist)}@festplan.app`,
         `DTSTAMP:${dtstamp}`,
+        ...(reminder === null ? [] : alarmLines(reminder, `${s.artist} @ ${s.stage}`)),
         'END:VEVENT',
       ].map(foldLine).join('\r\n')
     })
