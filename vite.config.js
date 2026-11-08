@@ -10,8 +10,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Edge function calls  → NetworkFirst  (fresh data when online, cache fallback)
 // Festival tables      → NetworkFirst  (admin edits must be visible immediately;
 //                         fall back to cache only when genuinely offline)
-// User-owned tables    → StaleWhileRevalidate  (instant render, background sync;
-//                         safe because changes come from this device only)
+// User-owned tables    → NetworkFirst  (live when online; cached copy offline)
 // Everything else      → NetworkOnly  (auth, realtime, maps, etc.)
 
 // Workbox only applies a RegExp route to a cross-origin request (Supabase is
@@ -26,7 +25,7 @@ const EDGE_FN_PATTERN = new RegExp(`${ORIGIN}/functions/v1/`)
 const FESTIVAL_TABLES = ['festival_meta', 'timetable_slots']
 const FESTIVAL_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${FESTIVAL_TABLES.join('|')})`)
 
-// User-owned tables: safe to serve from cache while revalidating in bg.
+// User-owned tables: also live when online, cache only as offline fallback.
 const USER_TABLES = ['user_artists', 'user_schedules', 'artist_ratings']
 const USER_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${USER_TABLES.join('|')})`)
 
@@ -92,13 +91,17 @@ export default defineConfig({
           },
 
           // 2b. User-owned tables (user_artists, user_schedules, artist_ratings)
-          //     — StaleWhileRevalidate: safe to show the cached version instantly
-          //     because mutations on these tables always originate from this device.
+          //     — NetworkFirst too. Never serve a cached copy while the network
+          //     works: another device, or this device after the cached GET, may
+          //     have changed the row, and SetupPage writes the loaded artist
+          //     list back (a stale read would delete newer artists). The cache
+          //     is only the offline / very slow fallback.
           {
             urlPattern: USER_REST_PATTERN,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-user',
+              networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 60,
                 maxAgeSeconds: 60 * 60 * 24 * 3,  // 3 days

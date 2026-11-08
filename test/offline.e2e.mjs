@@ -50,6 +50,8 @@ const SLOTS = [
   { artist: 'Synthetic Headliner', stage: 'Main', day_index: 0, start_time: '21:00', end_time: '22:30' },
   { artist: 'Someone Else', stage: 'Main', day_index: 1, start_time: '18:00', end_time: '19:00' },
 ]
+// artist_ratings is stateful, so the test can change it between reads.
+let ratings = []
 const hits = []
 const api = createServer((req, res) => {
   const url = new URL(req.url, API)
@@ -63,6 +65,7 @@ const api = createServer((req, res) => {
   const wantsObject = String(req.headers.accept || '').includes('vnd.pgrst.object')
   if (url.pathname === '/rest/v1/festival_meta') return json(wantsObject ? META : [META])
   if (url.pathname === '/rest/v1/timetable_slots') return json(SLOTS)
+  if (url.pathname === '/rest/v1/artist_ratings' && req.method === 'GET') return json(ratings)
   if (url.pathname.startsWith('/rest/v1/')) return json(wantsObject ? null : [], req.method === 'GET' ? 200 : 201)
   if (url.pathname === '/auth/v1/user') return json(USER)
   if (url.pathname === '/auth/v1/token') return json(session(3600))
@@ -160,11 +163,24 @@ try {
   console.log(`[online] service-worker runtime caches: ${JSON.stringify(runtimeCaches)}`)
   assert.ok(runtimeCaches['supabase-festival'] >= 2, 'festival_meta and timetable_slots responses are cached')
 
+  // Online reads of user data must be live, never a cached copy: a stale
+  // artist list would be written back by the Setup page.
+  const readRatings = () => page.evaluate(async api => {
+    const r = await fetch(`${api}/rest/v1/artist_ratings?select=artist_name,rating`, { headers: { apikey: 'synthetic-anon-key' } })
+    return r.json()
+  }, API)
+  assert.deepEqual(await readRatings(), [], 'first online read')
+  await new Promise(r => setTimeout(r, 1000))  // let the service worker store it
+  ratings = [{ artist_name: 'Synthetic Opener', rating: 5 }]
+  assert.deepEqual(await readRatings(), ratings, 'online read after a server change is fresh, not the cached copy')
+  console.log('[online] user-table read after a server change is fresh')
+
   // 2. Offline, timetable only in the service worker's cache
   await context.setOffline(true)
   await page.evaluate(fest => localStorage.removeItem(`festplan_timetable_${fest}`), FEST)
   await page.reload()
   await expectSchedule(page, 'offline, service-worker cache')
+  assert.deepEqual(await readRatings(), [{ artist_name: 'Synthetic Opener', rating: 5 }], 'offline read falls back to the cached copy')
   const badge = await page.getByRole('status', { name: 'Offline status' }).innerText()
   console.log(`[offline] badge: ${badge.replace(/\s+/g, ' ')}`)
   assert.match(badge, /Offline, last synced 14:20/)
