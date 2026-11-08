@@ -1,3 +1,4 @@
+import { trackRead } from './cache-source'
 import { supabase } from './supabase'
 import { withSync, registerWriteHandler } from './sync-state'
 
@@ -70,20 +71,31 @@ export function loadArtistsFromCache() {
  * @returns {Promise<string[] | null>}
  */
 export async function loadArtists(userId) {
-  if (!userId) return null
+  return (await loadArtistsWithSource(userId)).artists
+}
+
+/**
+ * Like loadArtists, plus whether the list came from the service worker's
+ * cache (offline or slow network) rather than the server.
+ * @returns {Promise<{ artists: string[]|null, fromCache: boolean }>}
+ */
+export async function loadArtistsWithSource(userId) {
+  if (!userId) return { artists: null, fromCache: false }
+  const read = trackRead()
   const { data, error } = await supabase
     .from('user_artists')
     .select('artist_name')
     .eq('user_id', userId)
     .is('festival_key', null)
     .order('position', { ascending: true })
+    .abortSignal(read.signal)
   if (error) {
     console.warn('[festplan] loadArtists:', error.message)
-    return null
+    return { artists: null, fromCache: false }
   }
   // Defensive dedup: guard against any pre-constraint rows that survived cleanup.
   const seen = new Set()
-  return data
+  const artists = data
     .map(r => r.artist_name)
     .filter(a => {
       const key = a.toLowerCase().trim()
@@ -91,6 +103,7 @@ export async function loadArtists(userId) {
       seen.add(key)
       return true
     })
+  return { artists, fromCache: read.fromCache() }
 }
 
 /**

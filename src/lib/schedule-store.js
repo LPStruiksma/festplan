@@ -1,4 +1,4 @@
-import { lastReadFromCache } from './cache-source'
+import { trackRead } from './cache-source'
 import { supabase } from './supabase'
 import { withSync, registerWriteHandler } from './sync-state'
 
@@ -99,17 +99,21 @@ function cacheFriends(festKey, friends) {
 export async function loadSchedule(userId, festKey) {
   if (!userId || !festKey) return { resolved: null, ratings: null }
 
+  const resRead = trackRead()
+  const ratRead = trackRead()
   const [resResult, ratResult] = await Promise.allSettled([
     supabase
       .from('schedule_resolutions')
       .select('artist_a, artist_b, chosen_artist')
       .eq('user_id', userId)
-      .eq('festival_key', festKey),
+      .eq('festival_key', festKey)
+      .abortSignal(resRead.signal),
     supabase
       .from('artist_ratings')
       .select('artist_name, rating')
       .eq('user_id', userId)
-      .eq('festival_key', festKey),
+      .eq('festival_key', festKey)
+      .abortSignal(ratRead.signal),
   ])
 
   // Reconstruct the frontend conflict key: "artistA|||artistB"
@@ -119,8 +123,8 @@ export async function loadSchedule(userId, festKey) {
   // network) is never newer than this device's own localStorage copy, which
   // every local change updates at once: report it as "no server data" (null)
   // so callers keep local state and the local cache isn't overwritten.
-  const resFromCache = lastReadFromCache('schedule_resolutions')
-  const ratFromCache = lastReadFromCache('artist_ratings')
+  const resFromCache = resRead.fromCache()
+  const ratFromCache = ratRead.fromCache()
 
   const resolved = resResult.status === 'fulfilled' && !resResult.value.error && !resFromCache
     ? Object.fromEntries(

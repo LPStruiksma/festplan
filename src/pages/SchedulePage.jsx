@@ -13,7 +13,6 @@ import { T } from '../lib/ui'
 import { getValidSpotifyToken } from '../lib/spotify-auth'
 import { buildIcs, normalizeReminder, DEFAULT_REMINDER_MINS } from '../lib/ical'
 import { isOffline, markSynced, saveTimetableSnapshot, loadTimetableSnapshot } from '../lib/sync-state'
-import { lastReadFromCache } from '../lib/cache-source'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import HeaderBar      from '../components/schedule/HeaderBar'
@@ -203,8 +202,7 @@ export default function SchedulePage({ session }) {
           // The service worker may have answered from its cache (offline, or
           // the server slower than its timeout): show it as saved data and
           // don't count it as a sync.
-          const servedFromCache = isOffline() ||
-            lastReadFromCache('festival_meta') || lastReadFromCache('timetable_slots')
+          const servedFromCache = isOffline() || result.fromCache === true
           setFest(result.festival)
           setFestLoad('loaded')
           setFromCache(servedFromCache && !isOffline())

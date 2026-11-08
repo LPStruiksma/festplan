@@ -31,6 +31,7 @@ function makeChain(result) {
     eq:     vi.fn(() => chain),
     is:     vi.fn(() => chain),
     order:  vi.fn(() => chain),
+    abortSignal: vi.fn(() => chain),
     then:   (onFulfilled, onRejected) =>
       Promise.resolve(result).then(onFulfilled, onRejected),
     catch:  (onRejected) => Promise.resolve(result).catch(onRejected),

@@ -18,16 +18,23 @@ vi.mock('../lib/api', () => ({
 vi.mock('../lib/spotify', () => ({ getAllUserArtists: vi.fn(async () => []) }))
 vi.mock('../lib/spotify-auth', () => ({ getValidSpotifyToken: vi.fn(async () => null) }))
 vi.mock('../lib/supabase', () => ({ supabase: {} }))
-vi.mock('../lib/profile', () => ({
-  loadArtistsFromCache: vi.fn(() => []),
-  loadArtists: vi.fn(async () => []),
-  saveArtistsRemote: vi.fn(async () => {}),
-}))
-vi.mock('../lib/cache-source', () => ({ lastReadFromCache: vi.fn(() => false) }))
+vi.mock('../lib/profile', async () => {
+  const { cacheFlag } = await import('./SetupPage.mock-state.js')
+  const loadArtists = vi.fn(async () => [])
+  return {
+    loadArtistsFromCache: vi.fn(() => []),
+    loadArtists,
+    // SetupPage reads the list with its source; tests set the list via
+    // loadArtists and the cache flag via cacheFlag.fromCache.
+    loadArtistsWithSource: vi.fn(async (...a) => ({ artists: await loadArtists(...a), fromCache: cacheFlag.fromCache })),
+    saveArtistsRemote: vi.fn(async () => {}),
+  }
+})
 
 import { getAllUserArtists } from '../lib/spotify'
 import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
-import { lastReadFromCache } from '../lib/cache-source'
+import { cacheFlag } from './SetupPage.mock-state.js'
+import { pushPendingWrite, clearPendingWrites } from '../lib/sync-state'
 import SetupPage from './SetupPage'
 
 const SESSION = { user: { id: 'u1' } }
@@ -45,7 +52,8 @@ beforeEach(() => {
   loadArtistsFromCache.mockReturnValue([])
   loadArtists.mockResolvedValue([])
   getAllUserArtists.mockResolvedValue([])
-  lastReadFromCache.mockReturnValue(false)
+  cacheFlag.fromCache = false
+  clearPendingWrites()
 })
 afterEach(() => vi.useRealTimers())
 
@@ -96,16 +104,36 @@ describe('SetupPage artist write-back (festplan#82)', () => {
   it('keeps this device’s list over a cache-served one, and writes nothing', async () => {
     loadArtistsFromCache.mockReturnValue(['Daft Punk', 'Added Here'])
     loadArtists.mockResolvedValue(['Daft Punk'])          // older copy from the SW cache
-    lastReadFromCache.mockReturnValue(true)
+    cacheFlag.fromCache = true
     await renderSetup()
     await afterDebounce()
     expect(screen.getByText('Added Here')).toBeInTheDocument()
     expect(saveArtistsRemote).not.toHaveBeenCalled()
   })
 
+  it('shows a queued offline edit with "Waiting to sync" instead of the older server list', async () => {
+    pushPendingWrite({ type: 'artists', args: ['u1', ['Daft Punk', 'Added Offline']], seq: 5 })
+    loadArtists.mockResolvedValue(['Daft Punk'])          // server hasn't got the edit yet
+    await renderSetup()
+    expect(await screen.findByText('Added Offline')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting to sync')
+    await afterDebounce()
+    expect(saveArtistsRemote).not.toHaveBeenCalled()     // the queue uploads it
+    act(() => { clearPendingWrites() })                   // queue drained
+    expect(screen.queryByText('Waiting to sync')).not.toBeInTheDocument()
+  })
+
+  it("ignores another user's queued save", async () => {
+    pushPendingWrite({ type: 'artists', args: ['someone-else', ['Not Mine']], seq: 5 })
+    loadArtists.mockResolvedValue(['Daft Punk'])
+    await renderSetup()
+    expect(await screen.findByText('Daft Punk')).toBeInTheDocument()
+    expect(screen.queryByText('Not Mine')).not.toBeInTheDocument()
+  })
+
   it('does not treat a cache-served empty list as a first visit', async () => {
     loadArtists.mockResolvedValue([])
-    lastReadFromCache.mockReturnValue(true)
+    cacheFlag.fromCache = true
     getAllUserArtists.mockResolvedValue(['Spotify Artist'])
     await renderSetup()
     await afterDebounce()

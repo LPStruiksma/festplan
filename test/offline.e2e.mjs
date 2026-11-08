@@ -206,11 +206,16 @@ try {
   assert.deepEqual(artistWrites, [], 'loading Setup writes nothing back')
   artists = [...artists, 'Added Elsewhere']   // another device adds an artist
   artistsDelayMs = 5000                        // slower than the SW's 3 s timeout
+  // Give this device a list that differs from the cached copy, so the test
+  // can tell whether Setup recognised the cached answer (it must keep this).
+  await page.evaluate(() => localStorage.setItem('festplan_artists',
+    JSON.stringify(['Synthetic Opener', 'Synthetic Headliner', 'Device Copy'])))
   await page.reload()
   await settle(8000)  // past the SW timeout, the save debounce and the late response
   assert.deepEqual(artistWrites, [], 'a cache-served list is not written back')
   assert.deepEqual(artists, ['Synthetic Opener', 'Synthetic Headliner', 'Added Elsewhere'], 'server list intact')
-  assert.deepEqual(await shownArtists(), ['Synthetic Opener', 'Synthetic Headliner'], 'this device keeps its own list')
+  assert.deepEqual(await shownArtists(), ['Synthetic Opener', 'Synthetic Headliner', 'Device Copy'],
+    'Setup recognised the cache-served answer and kept this device\'s list')
   console.log('[slow network] Setup served a cached list and wrote nothing back; server list intact')
   artistsDelayMs = 0
   await page.reload()

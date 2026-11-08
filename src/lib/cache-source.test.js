@@ -1,40 +1,45 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { makeTrackingFetch, lastReadFromCache, resetCacheSource, FROM_CACHE_HEADER } from './cache-source'
+import { describe, it, expect } from 'vitest'
+import { makeTrackingFetch, trackRead, FROM_CACHE_HEADER } from './cache-source'
 
 const response = (fromCache) => ({ headers: new Headers(fromCache ? { [FROM_CACHE_HEADER]: '1' } : {}) })
 
-beforeEach(resetCacheSource)
-
-describe('cache-source', () => {
-  it('records a GET served from the service-worker cache', async () => {
+describe('cache-source (per request)', () => {
+  it('records a response served from the service-worker cache', async () => {
     const f = makeTrackingFetch(async () => response(true))
-    await f('https://x.supabase.co/rest/v1/user_artists?select=artist_name')
-    expect(lastReadFromCache('user_artists')).toBe(true)
+    const read = trackRead()
+    await f('https://x.supabase.co/rest/v1/user_artists', { signal: read.signal })
+    expect(read.fromCache()).toBe(true)
   })
 
-  it('a fresh GET clears the flag for that table only', async () => {
-    let cached = true
-    const f = makeTrackingFetch(async () => response(cached))
-    await f('https://x.supabase.co/rest/v1/user_artists')
-    await f('https://x.supabase.co/rest/v1/artist_ratings')
-    cached = false
-    await f('https://x.supabase.co/rest/v1/user_artists')
-    expect(lastReadFromCache('user_artists')).toBe(false)
-    expect(lastReadFromCache('artist_ratings')).toBe(true)
+  it('a fresh response reads as not cached', async () => {
+    const f = makeTrackingFetch(async () => response(false))
+    const read = trackRead()
+    await f('https://x.supabase.co/rest/v1/user_artists', { signal: read.signal })
+    expect(read.fromCache()).toBe(false)
   })
 
-  it('ignores writes, non-REST URLs and Request objects without a method', async () => {
-    const f = makeTrackingFetch(async () => response(true))
-    await f('https://x.supabase.co/rest/v1/user_artists', { method: 'POST' })
-    await f('https://x.supabase.co/auth/v1/user')
-    expect(lastReadFromCache('user_artists')).toBe(false)
-    await f({ url: 'https://x.supabase.co/rest/v1/friends?x=1' })
-    expect(lastReadFromCache('friends')).toBe(true)
+  it('two overlapping reads of the same table keep their own answers', async () => {
+    let releaseCached
+    const f = makeTrackingFetch((url, init) =>
+      init.cached ? new Promise(r => { releaseCached = () => r(response(true)) }) : Promise.resolve(response(false)))
+    const slow = trackRead()
+    const fast = trackRead()
+    const pSlow = f('https://x/rest/v1/user_artists', { signal: slow.signal, cached: true })
+    await f('https://x/rest/v1/user_artists', { signal: fast.signal })
+    releaseCached()
+    await pSlow
+    expect(slow.fromCache()).toBe(true)
+    expect(fast.fromCache()).toBe(false)
   })
 
-  it('passes the response through untouched', async () => {
-    const res = response(false)
+  it('ignores untracked requests and passes the response through', async () => {
+    const res = response(true)
     const f = makeTrackingFetch(async () => res)
     expect(await f('https://x/rest/v1/t')).toBe(res)
+    expect(await f('https://x/rest/v1/t', { signal: new AbortController().signal })).toBe(res)
+  })
+
+  it('a read that never ran reports not cached', () => {
+    expect(trackRead().fromCache()).toBe(false)
   })
 })
