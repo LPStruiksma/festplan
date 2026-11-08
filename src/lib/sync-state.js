@@ -55,8 +55,16 @@ function loadPending() {
   try { return JSON.parse(localStorage.getItem(LS_PENDING_KEY) || '[]') } catch { return [] }
 }
 
+// Listeners for the number of queued writes (OfflineBadge shows it live).
+const _pendingListeners = new Set()
+function _notifyPending() {
+  const n = loadPending().length
+  _pendingListeners.forEach(fn => fn(n))
+}
+
 function savePending(list) {
   localStorage.setItem(LS_PENDING_KEY, JSON.stringify(list))
+  _notifyPending()
 }
 
 // Which server row a payload writes.  Two payloads with the same identity
@@ -195,7 +203,17 @@ export function useOnline() {
   }, [])
   return online
 }
-export function clearPendingWrites() { localStorage.removeItem(LS_PENDING_KEY) }
+export function clearPendingWrites() { localStorage.removeItem(LS_PENDING_KEY); _notifyPending() }
+
+/** Number of queued writes as React state; updates when a write is queued or replayed. */
+export function usePendingCount() {
+  const [count, setCount] = useState(() => loadPending().length)
+  useEffect(() => {
+    _pendingListeners.add(setCount)
+    return () => { _pendingListeners.delete(setCount) }
+  }, [])
+  return count
+}
 
 // ── Write handler registry ───────────────────────────────────────────────────
 

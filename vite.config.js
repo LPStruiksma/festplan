@@ -29,6 +29,24 @@ const FESTIVAL_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${FESTIVAL_TABLES.j
 const USER_TABLES = ['user_artists', 'user_schedules', 'artist_ratings']
 const USER_REST_PATTERN = new RegExp(`${ORIGIN}/rest/v1/(${USER_TABLES.join('|')})`)
 
+// Marks a response the service worker served from its cache (NetworkFirst
+// fell back: offline or slower than networkTimeoutSeconds). The app reads the
+// header (src/lib/supabase.js) so it never writes cached data back over newer
+// server data, and never counts a cached read as "synced".
+// Serialized into sw.js by Workbox: it must not reference outer variables.
+const MARK_FROM_CACHE = {
+  cachedResponseWillBeUsed: async ({ cachedResponse }) => {
+    if (!cachedResponse) return cachedResponse
+    const headers = new Headers(cachedResponse.headers)
+    headers.set('x-festplan-from-cache', '1')
+    return new Response(await cachedResponse.blob(), {
+      status: cachedResponse.status,
+      statusText: cachedResponse.statusText,
+      headers,
+    })
+  },
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -62,6 +80,7 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'edge-functions',
+              plugins: [MARK_FROM_CACHE],
               networkTimeoutSeconds: 8,
               expiration: {
                 maxEntries: 40,
@@ -81,6 +100,7 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-festival',
+              plugins: [MARK_FROM_CACHE],
               networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 60,
@@ -101,6 +121,7 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-user',
+              plugins: [MARK_FROM_CACHE],
               networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 60,

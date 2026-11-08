@@ -1,3 +1,4 @@
+import { lastReadFromCache } from './cache-source'
 import { supabase } from './supabase'
 import { withSync, registerWriteHandler } from './sync-state'
 
@@ -114,13 +115,20 @@ export async function loadSchedule(userId, festKey) {
   // Reconstruct the frontend conflict key: "artistA|||artistB"
   // artist_a < artist_b is guaranteed by the DB CHECK constraint so the
   // join order matches what the frontend produces with .sort().join('|||').
-  const resolved = resResult.status === 'fulfilled' && !resResult.value.error
+  // A read the service worker served from its cache (offline or slow
+  // network) is never newer than this device's own localStorage copy, which
+  // every local change updates at once: report it as "no server data" (null)
+  // so callers keep local state and the local cache isn't overwritten.
+  const resFromCache = lastReadFromCache('schedule_resolutions')
+  const ratFromCache = lastReadFromCache('artist_ratings')
+
+  const resolved = resResult.status === 'fulfilled' && !resResult.value.error && !resFromCache
     ? Object.fromEntries(
         resResult.value.data.map(r => [`${r.artist_a}|||${r.artist_b}`, r.chosen_artist])
       )
     : null
 
-  const ratings = ratResult.status === 'fulfilled' && !ratResult.value.error
+  const ratings = ratResult.status === 'fulfilled' && !ratResult.value.error && !ratFromCache
     ? Object.fromEntries(
         ratResult.value.data.map(r => [r.artist_name, r.rating])
       )
