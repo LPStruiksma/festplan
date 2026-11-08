@@ -4,8 +4,8 @@ import { getAllUserArtists } from '../lib/spotify'
 import { FEST_COLORS, norm } from '../lib/festivals'
 import { discoverFestivals, mergeFestivals, fetchAllFestivals, artistCache, ensureFestivalIngested } from '../lib/api'
 import { supabase } from '../lib/supabase'
-import { loadArtistsFromCache, loadArtists, saveArtistsRemote } from '../lib/profile'
-import { lastReadFromCache } from '../lib/cache-source'
+import { loadArtistsFromCache, loadArtistsWithSource, saveArtistsRemote } from '../lib/profile'
+import { getPendingWrites, usePendingCount } from '../lib/sync-state'
 import { isPastFestival, splitPastFestivals } from '../lib/upcoming'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -16,6 +16,13 @@ import { isPastFestival, splitPastFestivals } from '../lib/upcoming'
 const T = {
   display: "var(--fp-font-display)",
   body: "var(--fp-font-body)",
+}
+
+// The artist list of this user's queued (not yet uploaded) save, or null.
+function queuedArtists(userId) {
+  if (!userId) return null
+  const entry = getPendingWrites().filter(p => p?.type === 'artists' && p.args?.[0] === userId).pop()
+  return Array.isArray(entry?.args?.[1]) ? entry.args[1] : null
 }
 
 // `today` is injectable for tests; festivals that ended before it are hidden.
@@ -66,6 +73,10 @@ export default function SetupPage({ session, today = new Date() }) {
   // is never written back, so a stale copy (service-worker cache on a slow or
   // missing network, or an older read) can't overwrite newer artists.
   const [artistsDirty, setArtistsDirty] = useState(false)
+  // Re-render when the offline write queue changes, so "Waiting to sync"
+  // appears and clears on time.
+  usePendingCount()
+  const artistsWaiting = queuedArtists(session?.user?.id) !== null
 
   useEffect(() => {
     async function load() {
@@ -78,19 +89,24 @@ export default function SetupPage({ session, today = new Date() }) {
         userId
           ? getAllUserArtists(userId)
           : Promise.reject(new Error('Please sign in to load your Spotify artists.')),
-        loadArtists(userId),
+        loadArtistsWithSource(userId),
       ])
 
       const spotifyArtists = spotifyResult.status === 'fulfilled' ? spotifyResult.value : []
       // null = fetch failed; [] = fetch succeeded but no saved list yet
-      const saved = supabaseResult.status === 'fulfilled' ? supabaseResult.value : null
-
+      const loaded = supabaseResult.status === 'fulfilled' ? supabaseResult.value : null
+      const saved = loaded?.artists ?? null
       // The service worker answered from its cache (offline, or slower than
       // its timeout): this device's own list is at least as new.
-      const savedFromCache = saved !== null && lastReadFromCache('user_artists')
+      const savedFromCache = saved !== null && loaded.fromCache === true
       const localList = loadArtistsFromCache()
+      // An edit made offline is still queued: it is newer than anything the
+      // server has, and the queue will upload it. Show it, don't save it again.
+      const queued = queuedArtists(userId)
 
-      if (saved && saved.length > 0 && !(savedFromCache && localList.length)) {
+      if (queued) {
+        setMyArtists(queued)
+      } else if (saved && saved.length > 0 && !(savedFromCache && localList.length)) {
         // Returning user — restore their curated Supabase list.
         setMyArtists(saved)
         if (!savedFromCache) setSyncStatus('synced')
@@ -463,6 +479,18 @@ export default function SetupPage({ session, today = new Date() }) {
               }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
                 Saving
+              </span>
+            ) : artistsWaiting ? (
+              <span role="status" title="Your latest changes are saved on this phone and will upload when you're back online." style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                padding: '3px 9px', borderRadius: 20,
+                background: 'var(--fp-s2)', color: 'var(--fp-text-dim)',
+                border: '1px solid var(--fp-border)',
+              }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--fp-text-dim)', flexShrink: 0 }} />
+                Waiting to sync
               </span>
             ) : syncStatus === 'synced' ? (
               <span style={{

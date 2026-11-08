@@ -6,7 +6,7 @@ import { describe, test, expect, vi } from 'vitest'
 // they run before any top-level const declarations.  vi.hoisted() lifts these
 // fixtures to the same level so the mock factory can reference them.
 
-const { MOCK_METAS, MOCK_SLOTS, queryResponses } = vi.hoisted(() => {
+const { MOCK_METAS, MOCK_SLOTS, queryResponses, cachedReads } = vi.hoisted(() => {
   const MOCK_METAS = [
     {
       festival_key: 'alpha',
@@ -43,7 +43,20 @@ const { MOCK_METAS, MOCK_SLOTS, queryResponses } = vi.hoisted(() => {
 
   // A per-query override can return an explicit { data, error } or throw/reject.
   const queryResponses = { festival_meta: null, timetable_slots: null }
-  return { MOCK_METAS, MOCK_SLOTS, queryResponses }
+  // Which tracked reads (in call order) the fake service worker served from cache.
+  const cachedReads = { flags: [] }
+  return { MOCK_METAS, MOCK_SLOTS, queryResponses, cachedReads }
+})
+
+vi.mock('./cache-source', () => {
+  let n = 0
+  return {
+    trackRead: () => {
+      const i = n++
+      return { signal: {}, fromCache: () => cachedReads.flags[i] === true }
+    },
+    resetReads: () => { n = 0 },
+  }
 })
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -64,6 +77,7 @@ vi.mock('./supabase', () => {
       select:  () => builder,
       order:   () => builder,
       eq:      () => builder,
+      abortSignal: () => builder,
       single:  () => resolved(),
       maybeSingle: () => resolved(),
       // Make the builder itself awaitable so `await supabase.from(...).select(...)` works.
@@ -89,6 +103,7 @@ vi.mock('./supabase', () => {
 })
 
 import { fallbackDiscover, fetchAllFestivals, fetchTimetable, artistCache } from './api'
+import { resetReads } from './cache-source'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fallbackDiscover(artists)
@@ -326,5 +341,25 @@ describe('fetchTimetable error vs absence contract', () => {
     queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
     queryResponses.timetable_slots = { data: null, error: null }
     await expect(fetchTimetable('alpha')).rejects.toThrow('invalid Supabase query response')
+  })
+})
+
+
+describe('fetchTimetable reports service-worker cache answers (festplan#84)', () => {
+  test('fresh reads: fromCache false', async () => {
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    queryResponses.timetable_slots = null
+    resetReads(); cachedReads.flags = [false, false]
+    const r = await fetchTimetable('alpha')
+    expect(r.fromCache).toBe(false)
+  })
+
+  test('either part from the cache: fromCache true', async () => {
+    queryResponses.festival_meta = { data: MOCK_METAS[0], error: null }
+    resetReads(); cachedReads.flags = [false, true]
+    expect((await fetchTimetable('alpha')).fromCache).toBe(true)
+    resetReads(); cachedReads.flags = [true, false]
+    expect((await fetchTimetable('alpha')).fromCache).toBe(true)
+    queryResponses.festival_meta = null
   })
 })

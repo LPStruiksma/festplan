@@ -16,11 +16,18 @@ vi.mock('../lib/api', () => ({
 vi.mock('../lib/spotify', () => ({ getAllUserArtists: vi.fn(async () => []) }))
 vi.mock('../lib/spotify-auth', () => ({ getValidSpotifyToken: vi.fn(async () => null) }))
 vi.mock('../lib/supabase', () => ({ supabase: {} }))
-vi.mock('../lib/profile', () => ({
-  loadArtistsFromCache: vi.fn(() => []),
-  loadArtists: vi.fn(async () => []),
-  saveArtistsRemote: vi.fn(async () => {}),
-}))
+vi.mock('../lib/profile', async () => {
+  const { cacheFlag } = await import('./SetupPage.mock-state.js')
+  const loadArtists = vi.fn(async () => [])
+  return {
+    loadArtistsFromCache: vi.fn(() => []),
+    loadArtists,
+    // SetupPage reads the list with its source; tests set the list via
+    // loadArtists and the cache flag via cacheFlag.fromCache.
+    loadArtistsWithSource: vi.fn(async (...a) => ({ artists: await loadArtists(...a), fromCache: cacheFlag.fromCache })),
+    saveArtistsRemote: vi.fn(async () => {}),
+  }
+})
 
 import { fetchAllFestivals, discoverFestivals } from '../lib/api'
 import { loadArtistsFromCache, loadArtists } from '../lib/profile'

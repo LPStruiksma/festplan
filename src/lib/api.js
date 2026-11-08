@@ -3,6 +3,7 @@
 // (festival_meta + timetable_slots). Seed festivals with:
 //   node --env-file=.env scripts/seed-festival.mjs scripts/festivals/<id>-2026.json
 
+import { trackRead } from './cache-source'
 import { supabase } from './supabase'
 import { FEST_COLORS, norm } from './festivals'
 
@@ -65,10 +66,15 @@ export async function fetchAllFestivals() {
 export async function fetchTimetable(festivalId) {
   // A successful missing row is distinct from an unavailable backend.
   // maybeSingle() returns { data: null, error: null } for zero rows.
+  // Tracked per request so the caller can tell a service-worker cache answer
+  // (offline or slow network) from fresh server data (see cache-source.js).
+  const metaRead = trackRead()
+  const slotsRead = trackRead()
   const { data: meta, error: metaErr } = await supabase
     .from('festival_meta')
     .select('*')
     .eq('festival_key', festivalId)
+    .abortSignal(metaRead.signal)
     .maybeSingle()
 
   if (metaErr) throw metaErr
@@ -78,6 +84,7 @@ export async function fetchTimetable(festivalId) {
     .from('timetable_slots')
     .select('artist, stage, day_index, start_time, end_time')
     .eq('festival_key', festivalId)
+    .abortSignal(slotsRead.signal)
 
   if (slotsErr) throw slotsErr
   if (!Array.isArray(slots)) {
@@ -88,6 +95,8 @@ export async function fetchTimetable(festivalId) {
 
   return {
     source: 'supabase',
+    // True when either part came from the service-worker cache.
+    fromCache: metaRead.fromCache() || slotsRead.fromCache(),
     festival: {
       id:          festivalId,
       name:        meta.name,
