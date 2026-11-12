@@ -23,7 +23,6 @@ vi.mock('../lib/sync-state', () => ({
   getPendingWrites: vi.fn(() => []),
   usePendingCount: vi.fn(() => 0),
 }))
-vi.mock('../lib/festivals', () => ({ FEST_COLORS: {}, norm: (s) => s.toLowerCase() }))
 
 import { loadArtistsFromCache, loadArtistsWithSource, saveArtistsRemote } from '../lib/profile'
 import SetupPage from './SetupPage'
