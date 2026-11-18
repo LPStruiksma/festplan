@@ -29,7 +29,7 @@ export async function fetchAllFestivals() {
       .order('start_date'),
     supabase
       .from('timetable_slots')
-      .select('artist'),
+      .select('festival_key, artist'),
   ])
 
   if (metaRes.error) throw metaRes.error
@@ -41,10 +41,10 @@ export async function fetchAllFestivals() {
     throw new Error('fetchAllFestivals: invalid Supabase query response')
   }
 
-  // Hydrate the artist autocomplete cache only after both queries succeed.
-  if (slotData.length) {
-    artistCache = [...new Set(slotData.map(s => s.artist))].sort()
-  }
+  // Only actual slots establish that an edition has a published timetable.
+  // An edition with confirmed dates but no slots remains selectable.
+  artistCache = [...new Set(slotData.map(s => s.artist).filter(Boolean))].sort()
+  const editionsWithSlots = new Set(slotData.map(s => s.festival_key))
 
   return data.map(f => ({
     id:          f.festival_key,
@@ -56,7 +56,7 @@ export async function fetchAllFestivals() {
     endDate:     f.end_date,
     accentColor: f.accent_color || FEST_COLORS[f.festival_key] || null,
     stages:      f.stages || [],
-    hasTimetable: true,
+    hasTimetable: editionsWithSlots.has(f.festival_key),
   }))
 }
 
@@ -141,18 +141,20 @@ export async function fallbackDiscover(artists) {
     ])
 
     const { data: metas, error: metaErr } = metaRes
-    const { data: slots } = slotsRes
+    const { data: slots, error: slotsErr } = slotsRes
 
-    if (metaErr || !metas?.length) return []
-
-    // Hydrate artist cache as a side-effect.
-    if (slots?.length) {
-      artistCache = [...new Set(slots.map(s => s.artist))].sort()
+    if (metaErr) throw metaErr
+    if (slotsErr) throw slotsErr
+    if (!Array.isArray(metas) || !Array.isArray(slots)) {
+      throw new Error('fallbackDiscover: invalid Supabase query response')
     }
+    if (!metas.length) return []
+
+    artistCache = [...new Set(slots.map(s => s.artist).filter(Boolean))].sort()
 
     return metas.map(f => {
       const festArtists = [...new Set(
-        (slots || [])
+        slots
           .filter(s => s.festival_key === f.festival_key)
           .map(s => s.artist)
       )]
@@ -174,8 +176,8 @@ export async function fallbackDiscover(artists) {
       }
     }).sort((a, b) => b.matchCount - a.matchCount)
   } catch (e) {
-    console.warn('fallbackDiscover: Supabase unavailable:', e.message)
-    return []
+    console.warn('fallbackDiscover: Supabase unavailable:', e?.message || e)
+    throw e
   }
 }
 
