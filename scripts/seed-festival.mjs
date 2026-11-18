@@ -6,6 +6,13 @@
  * only. Full lineups retain the existing timetable delete + batch-insert replace.
  * All validation runs before the first database operation.
  *
+ * Not atomic: a full-lineup import deletes the edition's slots, then inserts
+ * batches. If a batch insert fails, the edition is left with only the batches
+ * already inserted (other editions are never touched; the delete is an exact
+ * festival_key match). The error names the failed batch. Recovery is to re-run
+ * the same file once the database is reachable: delete + insert converges on
+ * the same rows. A metadata-only import never deletes existing slots.
+ *
  * CLI (operator-controlled; do not run against production without approval):
  *   node --env-file=.env scripts/seed-festival.mjs <path-to-json>
  */
