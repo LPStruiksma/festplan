@@ -6,11 +6,38 @@ import ViewToggle from './ViewToggle'
 import ListView from './ListView'
 import GridView from './GridView'
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December']
+
+function isoParts(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [y, m, d] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
+  return { y, m, d }
+}
+
+/**
+ * "11–13 June 2027" from verified ISO start/end dates; null when either date is
+ * missing, malformed or reversed. Never derived from the device's clock.
+ */
+function formatFestivalDates(startDate, endDate) {
+  const a = isoParts(startDate)
+  const b = isoParts(endDate)
+  if (!a || !b || startDate > endDate) return null
+  if (a.y !== b.y) return `${a.d} ${MONTHS[a.m - 1]} ${a.y} – ${b.d} ${MONTHS[b.m - 1]} ${b.y}`
+  if (a.m !== b.m) return `${a.d} ${MONTHS[a.m - 1]} – ${b.d} ${MONTHS[b.m - 1]} ${a.y}`
+  if (a.d === b.d) return `${a.d} ${MONTHS[a.m - 1]} ${a.y}`
+  return `${a.d}–${b.d} ${MONTHS[a.m - 1]} ${a.y}`
+}
+
 /**
  * "My Schedule" tab content.
  *
  * Props:
- *   isLineupOnly  — boolean — switches layout between timetable and lineup-only modes
+ *   isLineupOnly  — boolean — switches layout between timetable and lineup-only modes;
+ *                   with an empty lineup it shows only the "Lineup not announced yet"
+ *                   card (no timetable banner, no act filter, no invented acts)
  *   fa            — festival accent colour
  *   fest          — festival object
  *   day           — selected day index
@@ -38,6 +65,45 @@ export default function MyScheduleTab({
   // supplies the conflict-resolved selection for the current day.
   const [picksOnly, setPicksOnly] = React.useState(false)
   const visibleLineup = picksOnly ? dayMatched : dayLineup
+  // A lineup-only festival with no returned acts has not announced anyone yet.
+  // This is a festival-level state, distinct from "timetable coming soon".
+  const lineupNotAnnounced = isLineupOnly && dayLineup.length === 0
+
+  if (lineupNotAnnounced) {
+    const dates = formatFestivalDates(fest?.startDate, fest?.endDate)
+    const where = typeof fest?.location === 'string' ? fest.location.trim() : ''
+    return (
+      <section aria-labelledby="fp-lineup-status" className="fp-animate-in" style={{
+        background: `${fa}0a`,
+        border: `1px solid ${fa}55`,
+        borderRadius: 'var(--fp-radius-md)',
+        padding: '18px 18px 20px',
+        marginBottom: 18,
+        animation: 'fp-fadeIn 0.4s ease both',
+        overflowWrap: 'break-word',
+      }}>
+        {(dates || where) && (
+          <p style={{
+            margin: '0 0 12px', fontSize: 13, fontWeight: 700,
+            color: 'var(--fp-text)', lineHeight: 1.4,
+          }}>
+            {[dates, where].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        <h2 id="fp-lineup-status" style={{
+          margin: '0 0 6px',
+          fontFamily: T.body, fontSize: 12, fontWeight: 800, letterSpacing: 1.5,
+          textTransform: 'uppercase', color: 'var(--fp-text)', lineHeight: 1.4,
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 16, letterSpacing: 0, color: fa, marginRight: 8 }}>◌</span>
+          Lineup not announced yet
+        </h2>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--fp-text-dim)', lineHeight: 1.5 }}>
+          No artists have been announced for this festival in FestPlan. Check back for lineup updates.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <>
@@ -127,9 +193,7 @@ export default function MyScheduleTab({
             fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
           }}>
             {dayLineup.length === 0
-              ? (isLineupOnly
-                  ? 'No acts have been announced for this lineup yet.'
-                  : 'No acts are scheduled for this day yet.')
+              ? 'No acts are scheduled for this day yet.'
               : (isLineupOnly
                   ? 'None of your artists are on this lineup.'
                   : 'None of your artists play on this day.')}

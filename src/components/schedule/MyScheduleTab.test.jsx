@@ -262,9 +262,10 @@ describe('MyScheduleTab rendering', () => {
     expect(screen.getByText(/None of your artists play on this day/i)).toBeInTheDocument()
   })
 
-  test('shows lineup-only banner when isLineupOnly is true', () => {
-    render(<MyScheduleTab {...baseProps} isLineupOnly={true} />)
+  test('shows lineup-only banner when isLineupOnly is true and acts are announced', () => {
+    render(<MyScheduleTab {...baseProps} isLineupOnly={true} dayLineup={[slot('The xx', null, null)]} />)
     expect(screen.getByText(/Timetable Coming Soon/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Lineup not announced yet/i)).not.toBeInTheDocument()
   })
 
   test('does not show the timetable-coming-soon banner for a full-timetable festival', () => {
@@ -378,7 +379,11 @@ describe('MyScheduleTab focus filter', () => {
     expect(screen.getByText('The xx')).toBeInTheDocument()
     expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
     rerender(<MyScheduleTab {...baseProps} isLineupOnly dayLineup={[]} dayMatched={[]} />)
-    expect(screen.getByText('No acts have been announced for this lineup yet.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Lineup not announced yet/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My picks only' })).not.toBeInTheDocument()
+    // The focus preference survives until a lineup is announced.
+    rerender(<MyScheduleTab {...baseProps} isLineupOnly dayLineup={lineup}
+      dayMatched={[lineup[0]]} myArtists={['The xx']} />)
     expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'true')
   })
 
@@ -394,5 +399,86 @@ describe('MyScheduleTab focus filter', () => {
     expect(screen.getByRole('button', { name: 'My picks only' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('The Cure')).toBeInTheDocument()
     expect(screen.queryByText('Gorillaz')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('MyScheduleTab unannounced lineup (festplan#88)', () => {
+  // Best Kept Secret-style metadata-only edition: verified dates, zero slots.
+  const ZERO = {
+    id: 'synthfest-2027', name: 'Synthfest 2027', location: 'Testdorp, NL',
+    startDate: '2027-06-11', endDate: '2027-06-13',
+    days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [], lineup: [], hasTimetable: false,
+  }
+  const zeroProps = { ...baseProps, isLineupOnly: true, fest: ZERO, dayLineup: [], dayMatched: [], finalSchedule: [] }
+
+  test('shows one calm status card with verified dates and place', () => {
+    render(<MyScheduleTab {...zeroProps} myArtists={['Saved Artist']} />)
+    const card = screen.getByRole('region', { name: /Lineup not announced yet/i })
+    expect(card).toHaveTextContent('11–13 June 2027 · Testdorp, NL')
+    expect(card).toHaveTextContent('No artists have been announced for this festival in FestPlan. Check back for lineup updates.')
+    expect(screen.getAllByRole('heading')).toHaveLength(1)
+  })
+
+  test('never implies acts or stage times exist', () => {
+    render(<MyScheduleTab {...zeroProps} myArtists={['Saved Artist']} />)
+    expect(screen.queryByText(/Timetable Coming Soon/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/announced lineup is listed below/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Schedule acts filter' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByText('Saved Artist')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No acts have been announced for this lineup yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Click stars/i)).not.toBeInTheDocument()
+  })
+
+  test('omits the date line when dates are missing or invalid, never guessing them', () => {
+    const { rerender } = render(<MyScheduleTab {...zeroProps} fest={{ ...ZERO, startDate: null, endDate: null, location: '' }} />)
+    const card = screen.getByRole('region', { name: /Lineup not announced yet/i })
+    expect(card.querySelectorAll('p')).toHaveLength(1)
+    rerender(<MyScheduleTab {...zeroProps} fest={{ ...ZERO, startDate: '2027-02-30', endDate: '2027-03-01' }} />)
+    expect(screen.getByRole('region', { name: /Lineup not announced yet/i })).toHaveTextContent(/^Testdorp, NL/)
+  })
+
+  test('keeps a very long festival name out of the card and wraps long places', () => {
+    const place = 'A very long synthetic place name that must wrap rather than clip on a phone'
+    render(<MyScheduleTab {...zeroProps} fest={{ ...ZERO, location: place }} />)
+    const card = screen.getByRole('region', { name: /Lineup not announced yet/i })
+    expect(card).toHaveTextContent(place)
+    expect(card).toHaveStyle({ overflowWrap: 'break-word' })
+  })
+
+  test('announced lineup without times stays "Timetable coming soon" with real acts', () => {
+    const lineup = [slot('Synthetic Act A', null, null), slot('Synthetic Act B', null, null)]
+    render(<MyScheduleTab {...zeroProps} dayLineup={lineup} dayMatched={[]} myArtists={['Not On Lineup']} />)
+    expect(screen.getByText(/Timetable Coming Soon/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Lineup not announced yet/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Synthetic Act A')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'My picks only' }))
+    expect(screen.getByText('None of your artists are on this lineup.')).toBeInTheDocument()
+  })
+
+  test('a published timetable with an empty selected day is not called unannounced', () => {
+    render(<MyScheduleTab {...baseProps} fest={{ ...ZERO, hasTimetable: true }} dayLineup={[]} />)
+    expect(screen.getByText('No acts are scheduled for this day yet.')).toBeInTheDocument()
+    expect(screen.queryByText(/Lineup not announced yet/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('unannounced lineup date line', () => {
+  test.each([
+    ['2027-06-11', '2027-06-13', '11–13 June 2027'],
+    ['2027-06-30', '2027-07-02', '30 June – 2 July 2027'],
+    ['2027-12-31', '2028-01-01', '31 December 2027 – 1 January 2028'],
+    ['2027-06-11', '2027-06-11', '11 June 2027'],
+    ['2027-06-13', '2027-06-11', null],
+    ['2027-02-30', '2027-03-01', null],
+    [null, '2027-06-13', null],
+    ['June 11', '2027-06-13', null],
+  ])('%s to %s', (startDate, endDate, expected) => {
+    const fest = { ...FEST, location: '', startDate, endDate, lineup: [], hasTimetable: false }
+    render(<MyScheduleTab {...baseProps} isLineupOnly fest={fest} />)
+    const paragraphs = [...screen.getByRole('region', { name: /Lineup not announced yet/i }).querySelectorAll('p')]
+    expect(paragraphs).toHaveLength(expected ? 2 : 1)
+    if (expected) expect(paragraphs[0]).toHaveTextContent(new RegExp(`^${expected}$`))
   })
 })
