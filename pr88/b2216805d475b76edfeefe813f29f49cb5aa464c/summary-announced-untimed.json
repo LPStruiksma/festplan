@@ -1,0 +1,109 @@
+[
+  {
+    "name": "11-announced-untimed-pick-360x780-dark",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only Synthetic Other Act Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "12-announced-untimed-pick-390x844-dark",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only Synthetic Other Act Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "13-announced-untimed-picks-only-filter-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. Your matched artists are listed below — ratings and group matching already work. All acts My picks only Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "14-announced-untimed-zero-matching-picks-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only — NONE OF YOUR ARTISTS ARE ON THIS LINEUP. Synthetic Other Act"
+  },
+  {
+    "name": "15-scheduled-no-picks-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 PLAYLIST CALENDAR EXPORT ● Synced Calendar reminder At start time 15 min before 30 min before MY SCHEDULE (0) ◎ GROUP (1) FRI JUN 11 0 SAT JUN 12 0 SUN JUN 13 0 All acts My picks only — NONE OF YOUR ARTISTS PLAY ON THIS DAY. 20:00 TO 21:00 Synthetic Act B SYNTHETIC FOREST 21:30 TO 23:00 Synthetic Act A SYNTHETIC MAIN"
+  },
+  {
+    "name": "16-zero-lineup-via-saved-metadata-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 151,
+      "width": 358,
+      "height": 140.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  }
+]

@@ -26,7 +26,7 @@ const TIMED = [
   { artist: 'Synthetic Act A', stage: 'Synthetic Main', day_index: 0, start_time: '21:30', end_time: '23:00' },
   { artist: 'Synthetic Act B', stage: 'Synthetic Forest', day_index: 0, start_time: '20:00', end_time: '21:00' },
 ]
-const state = { meta: BASE_META, slots: [], fail: false, delayMs: 0 }
+const state = { meta: BASE_META, slots: [], fail: false, delayMs: 0, saved: null }
 
 function session(expiresIn) {
   const exp = Math.floor(Date.now() / 1000) + expiresIn
@@ -42,7 +42,7 @@ const api = createServer((req, res) => {
   const wantsObject = String(req.headers.accept || '').includes('vnd.pgrst.object')
   if (state.fail && url.pathname.startsWith('/rest/v1/festival')) return json({ message: 'synthetic outage' }, 500)
   if (state.fail && url.pathname.startsWith('/rest/v1/timetable')) return json({ message: 'synthetic outage' }, 500)
-  if (url.pathname === '/rest/v1/festival_meta') return json(wantsObject ? state.meta : [state.meta])
+  if (url.pathname === '/rest/v1/festival_meta') return json(wantsObject ? state.meta : (state.meta ? [state.meta] : []))
   if (url.pathname === '/rest/v1/timetable_slots') return json(state.slots)
   if (url.pathname === '/rest/v1/user_artists') return json([{ artist_name: 'Synthetic Saved Artist' }])
   if (url.pathname.startsWith('/rest/v1/')) return json(wantsObject ? null : [])
@@ -60,17 +60,29 @@ async function waitForHttp(url) {
 }
 
 const results = []
-async function capture(browser, name, { width = 360, height = 780, scheme = 'dark', setup, before, after } = {}) {
-  Object.assign(state, { meta: BASE_META, slots: [], fail: false, delayMs: 0 }, setup || {})
+// Discovery metadata as SetupPage saves it (verified dates included); used when
+// festival_meta has no row, which is the only path to an announced lineup with
+// no timetable (fetchTimetable switches to timetable mode for any slot).
+const SAVED = { id: FEST, name: 'Synthfest 2027', location: 'Testdorp, NL', emoji: '🌲', accentColor: '#4ade80',
+  startDate: '2027-06-11', endDate: '2027-06-13' }
+const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null
+async function capture(browser, name, opts = {}) {
+  if (ONLY && !ONLY.test(name)) return
+  return captureNow(browser, name, opts)
+}
+async function captureNow(browser, name, { width = 360, height = 780, scheme = 'dark', setup, before, after } = {}) {
+  Object.assign(state, { meta: BASE_META, slots: [], fail: false, delayMs: 0, saved: null }, setup || {})
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
     colorScheme: scheme, locale: 'en-GB', timezoneId: 'Europe/Amsterdam', serviceWorkers: 'block' })
   const page = await context.newPage()
   await page.clock.setFixedTime(NOW)
-  await context.addInitScript(([key, sess, fest]) => {
+  await context.addInitScript(([key, sess, fest, saved]) => {
     localStorage.setItem('festplan_festival', fest)
     localStorage.setItem('festplan_artists', JSON.stringify(['Synthetic Saved Artist']))
     localStorage.setItem(key, JSON.stringify(sess))
-  }, [STORAGE_KEY, session(3600 * 24 * 365), FEST])
+    // Saved discovery metadata (SetupPage) for the lineup-only fallback states.
+    if (saved) localStorage.setItem('festplan_festival_meta', JSON.stringify(saved))
+  }, [STORAGE_KEY, session(3600 * 24 * 365), FEST, state.saved])
   if (before) await before(page, context)
   await page.goto(`${APP}/schedule`)
   if (after) await after(page, context)
@@ -86,7 +98,8 @@ async function capture(browser, name, { width = 360, height = 780, scheme = 'dar
   const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 600)
   results.push({ name, viewport: `${width}x${height} CSS @3x = ${width * 3}x${height * 3}`, scheme, card: box, back: backBox, horizontalOverflowPx: overflowX,
     cardInFirstScreen: box ? box.y + box.height <= height : null,
-    claimsActs: /Timetable Coming Soon|listed below|My picks only/i.test(text), text })
+    claimsActs: /Timetable Coming Soon|listed below|My picks only/i.test(text),
+    showsOfficialDates: /Jun|2027-06/.test(text), text })
   await context.close()
 }
 
@@ -127,6 +140,19 @@ try {
     },
     after: async page => { await page.getByText(/Lineup not announced yet/i).waitFor({ timeout: 15000 }) },
   })
+  // Announced lineup, no verified set times (saved-metadata fallback).
+  const fallback = matched => ({ meta: null, saved: { ...SAVED, matchedArtists: matched } })
+  await capture(browser, '11-announced-untimed-pick-360x780-dark', { setup: fallback(['Synthetic Saved Artist', 'Synthetic Other Act']) })
+  await capture(browser, '12-announced-untimed-pick-390x844-dark', { width: 390, height: 844, setup: fallback(['Synthetic Saved Artist', 'Synthetic Other Act']) })
+  await capture(browser, '13-announced-untimed-picks-only-filter-390', { width: 390, height: 844, setup: fallback(['Synthetic Saved Artist', 'Synthetic Other Act']),
+    after: async page => {
+      await page.getByText(/Timetable Coming Soon/i).waitFor({ timeout: 15000 })
+      await page.getByRole('button', { name: /My picks only/i }).click()
+    } })
+  await capture(browser, '14-announced-untimed-zero-matching-picks-390', { width: 390, height: 844, setup: fallback(['Synthetic Other Act']) })
+  await capture(browser, '15-scheduled-no-picks-390', { width: 390, height: 844,
+    setup: { slots: TIMED, meta: { ...BASE_META, stages: ['Synthetic Main', 'Synthetic Forest'] } } })
+  await capture(browser, '16-zero-lineup-via-saved-metadata-390', { width: 390, height: 844, setup: fallback([]) })
   writeFileSync(join(OUT, 'summary.json'), JSON.stringify(results, null, 2))
   console.log(JSON.stringify(results.map(r => ({ name: r.name, card: !!r.card, inFirst: r.cardInFirstScreen, overflow: r.horizontalOverflowPx, claimsActs: r.claimsActs, focused: r.focused })), null, 1))
 } finally {
