@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest'
+import { beforeEach, describe, test, expect, vi } from 'vitest'
 
 // ── Test fixtures (hoisted so they're accessible inside vi.mock) ──────────────
 //
@@ -113,6 +113,10 @@ import { resetReads } from './cache-source'
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('fallbackDiscover', () => {
+  beforeEach(() => {
+    queryResponses.festival_meta = null
+    queryResponses.timetable_slots = null
+  })
   // ── Result shape ────────────────────────────────────────────────────────────
   test('returns one result per festival returned by Supabase', async () => {
     const results = await fallbackDiscover([])
@@ -200,6 +204,32 @@ describe('fallbackDiscover', () => {
     expect(betaResult.totalKnownArtists).toBe(2)   // Gorillaz, Little Simz
   })
 
+  test('keeps a metadata-only 2027 edition discoverable without pretending slots are published', async () => {
+    queryResponses.festival_meta = { data: [{
+      festival_key: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', start_date: '2027-06-11', end_date: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [],
+    }], error: null }
+    queryResponses.timetable_slots = { data: [], error: null }
+    await expect(fallbackDiscover(['Radiohead'])).resolves.toMatchObject([{
+      id: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      startDate: '2027-06-11', endDate: '2027-06-13',
+      hasTimetable: false, totalKnownArtists: 0, matchCount: 0, matchedArtists: [],
+    }])
+  })
+
+  test('rejects a failed slots query rather than reporting an empty discovery result', async () => {
+    const failure = { code: '08006', message: 'synthetic slots outage' }
+    queryResponses.timetable_slots = { data: null, error: failure }
+    await expect(fallbackDiscover([])).rejects.toBe(failure)
+  })
+
+  test('rejects metadata failures rather than treating them as absence', async () => {
+    const failure = new Error('synthetic metadata outage')
+    queryResponses.festival_meta = () => Promise.reject(failure)
+    await expect(fallbackDiscover([])).rejects.toBe(failure)
+  })
+
   test('multiple artist matches accumulate correctly', async () => {
     const result = (await fallbackDiscover(['Radiohead', 'Bicep'])).find(r => r.id === 'alpha')
     expect(result.matchCount).toBe(2)
@@ -270,7 +300,7 @@ describe('fetchAllFestivals query contract', () => {
   test('maps successful festivals and hydrates the deduplicated sorted artist cache', async () => {
     queryResponses.festival_meta = { data: [MOCK_METAS[0]], error: null }
     queryResponses.timetable_slots = {
-      data: [{ artist: 'Slowdive' }, { artist: 'Bicep' }, { artist: 'Slowdive' }],
+      data: [{ festival_key: 'alpha', artist: 'Slowdive' }, { festival_key: 'alpha', artist: 'Bicep' }, { festival_key: 'alpha', artist: 'Slowdive' }],
       error: null,
     }
     await expect(fetchAllFestivals()).resolves.toEqual([{
@@ -286,6 +316,27 @@ describe('fetchAllFestivals query contract', () => {
       hasTimetable: true,
     }])
     expect(artistCache).toEqual(['Bicep', 'Slowdive'])
+  })
+
+  test('preserves confirmed BKS 2027 dates and marks an edition with no slots as unpublished', async () => {
+    queryResponses.festival_meta = { data: [{
+      festival_key: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', start_date: '2027-06-11', end_date: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [],
+    }], error: null }
+    queryResponses.timetable_slots = { data: [], error: null }
+    await expect(fetchAllFestivals()).resolves.toMatchObject([{
+      id: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', startDate: '2027-06-11', endDate: '2027-06-13',
+      hasTimetable: false, stages: [],
+    }])
+  })
+
+  test('only marks the festival whose slots are present as having a timetable', async () => {
+    queryResponses.festival_meta = { data: MOCK_METAS, error: null }
+    queryResponses.timetable_slots = { data: [{ festival_key: 'beta', artist: 'Gorillaz' }], error: null }
+    const festivals = await fetchAllFestivals()
+    expect(festivals.map(f => [f.id, f.hasTimetable])).toEqual([['alpha', false], ['beta', true]])
   })
 })
 
@@ -335,6 +386,19 @@ describe('fetchTimetable error vs absence contract', () => {
     expect(result.festival.name).toBe('Alpha Fest 2026')
     expect(result.festival.hasTimetable).toBe(false)
     expect(result.festival.lineup).toEqual([])
+  })
+
+  test('keeps Best Kept Secret 2027 metadata in a successful empty-slot timetable response', async () => {
+    queryResponses.festival_meta = { data: {
+      festival_key: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', start_date: '2027-06-11', end_date: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [],
+    }, error: null }
+    queryResponses.timetable_slots = { data: [], error: null }
+    await expect(fetchTimetable('bestkeptsecret-2027')).resolves.toMatchObject({
+      festival: { id: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+        startDate: '2027-06-11', endDate: '2027-06-13', hasTimetable: false, lineup: [] },
+    })
   })
 
   test('rejects malformed slots data instead of silently reporting no timetable', async () => {
