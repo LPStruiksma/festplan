@@ -176,7 +176,7 @@ export async function fallbackDiscover(artists) {
       }
     }).sort((a, b) => b.matchCount - a.matchCount)
   } catch (e) {
-    console.warn('fallbackDiscover: Supabase unavailable:', e.message)
+    console.warn('fallbackDiscover: Supabase unavailable:', e?.message || e)
     throw e
   }
 }
