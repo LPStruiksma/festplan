@@ -316,9 +316,9 @@ describe('fetchAllFestivals query contract', () => {
     queryResponses.festival_meta = { data: [MOCK_METAS[0]], error: null }
     queryResponses.timetable_slots = {
       data: [
-        { festival_key: 'alpha', artist: 'Slowdive', start_time: '20:00', end_time: '21:00' },
-        { festival_key: 'alpha', artist: 'Bicep', start_time: '21:00', end_time: '22:00' },
-        { festival_key: 'alpha', artist: 'Slowdive', start_time: '22:00', end_time: '23:00' },
+        { festival_key: 'alpha', artist: 'Slowdive', stage: 'Main Stage', day_index: 0, start_time: '20:00', end_time: '21:00' },
+        { festival_key: 'alpha', artist: 'Bicep', stage: 'Side Stage', day_index: 0, start_time: '21:00', end_time: '22:00' },
+        { festival_key: 'alpha', artist: 'Slowdive', stage: 'Main Stage', day_index: 1, start_time: '22:00', end_time: '23:00' },
       ],
       error: null,
     }
@@ -333,9 +333,9 @@ describe('fetchAllFestivals query contract', () => {
       accentColor: '#ff0000',
       stages: ['Main Stage', 'Side Stage'],
       lineup: [
-        { artist: 'Slowdive', stage: null, day: undefined, start: '20:00', end: '21:00' },
-        { artist: 'Bicep', stage: null, day: undefined, start: '21:00', end: '22:00' },
-        { artist: 'Slowdive', stage: null, day: undefined, start: '22:00', end: '23:00' },
+        { artist: 'Slowdive', stage: 'Main Stage', day: 0, start: '20:00', end: '21:00' },
+        { artist: 'Bicep', stage: 'Side Stage', day: 0, start: '21:00', end: '22:00' },
+        { artist: 'Slowdive', stage: 'Main Stage', day: 1, start: '22:00', end: '23:00' },
       ],
       hasTimetable: true,
     }])
