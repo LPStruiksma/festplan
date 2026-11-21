@@ -1,6 +1,6 @@
 # Freshness inventory
 
-Every dated or outside thing FestPlan depends on, with its source, when it was last checked and when it may stop holding. Strategy reads the **Valid until** column and opens a unit before the earliest date passes. `scripts/freshness.test.mjs` keeps this file in step with the code: every `scripts/festivals/*.json` file needs a row with its end date, and every Spotify Web API path the code calls needs a row.
+Every dated or outside thing FestPlan depends on, with its source, when it was last checked and when it may stop holding. Strategy reads the **Valid until** column and opens a unit before the earliest date passes. `scripts/freshness.test.mjs` keeps this file in step with the code: every importable edition seed in `scripts/festivals/` needs a row with its end date, and every Spotify Web API path the code calls needs a row. Untimed `*-announced.json` snapshots are not seed files; their source and inspection date are checked by fixture-specific tests.
 
 - Inventoried: 2026-11-03 at `main` 5c9eedc (festplan#29, autodev#646). Spotify rows updated 2026-11-03 at `main` 8fe4ab3 for festplan#31 units A (#36), B (#37), the C minimum (#38) and Lukas's Development Mode decision (#35).
 - Not reachable from the build container on 2026-11-03: `developer.spotify.com`, so Spotify facts below were read through web-search summaries of the official pages and stay `verify` until someone opens them. Ticketmaster facts come from the code comments only.
@@ -13,7 +13,7 @@ Every dated or outside thing FestPlan depends on, with its source, when it was l
 | **already passed** | Spotify Development Mode removed related artists (S2); festplan#31 unit C removed "You might also like" and the `recommend-festivals` edge function, since Lukas stays in Development Mode. The playlist builder and playlist import moved to the allowed endpoints in #36 and #37 (rows S1, S6, S11, S12; S3, S7-S9 retired). | festplan#31 |
 | **already passed** | All five seeded editions ended (last: Lowlands, 2026-08-16). Seeding a fresh install shows only past festivals. Glastonbury 2026 is a placeholder (fallow year). | open a unit when the 2027 dates are announced |
 | 2026-12-01 | Monthly recheck of Spotify Web API changes (S1, S4-S6, S10-S12): the changelog moved in 2024-11, 2026-02, 2026-03 and 2026-07. | recurring |
-| 2027-04-11 | First 2027 date-only edition ends (Coachella weekend 1); follow other festival end dates in the table. Files await metadata-only seed support. | festplan#28 |
+| 2027-04-11 | First 2027 date-only edition ends (Coachella weekend 1); follow other festival end dates in the table. Metadata-only seeding is available; importing untimed artist/day announcements needs a separate path. | festplan#28 |
 | 2027-05-01 | Yearly recheck of Ticketmaster Discovery API (T1-T2) and the Supabase edge runtime imports (R1). | recurring |
 
 ## Festival editions
@@ -27,12 +27,14 @@ Seed files read by `scripts/seed-festival.mjs`. **Valid until** is the edition's
 | F3 | `bestkeptsecret-2026.json` | Best Kept Secret, Hilvarenbeek, 2026-06-11 to 2026-06-13 | file, no source URL | verify | 2026-06-13 (passed) |
 | F4 | `glastonbury-2026.json` | Glastonbury 2026, 2026-06-25 to 2026-06-28; the file's `_note` says 2026 is a fallow year and the lineup is 2025 placeholder data | file `_note` | own placeholder | 2026-06-28 (passed); replace when the 2027 lineup is out |
 | F5 | `lowlands-2026.json` | Lowlands, Biddinghuizen, 2026-08-13 to 2026-08-16 | file, no source URL | verify | 2026-08-16 (passed) |
-| F6 | `bestkeptsecret-2027.json` | Best Kept Secret 2027, 2027-06-11 to 2027-06-13 | [organiser](https://www.bestkeptsecret.nl/news/best-kept-secret-2027), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-06-13 |
+| F6 | `bestkeptsecret-2027.json` | Best Kept Secret 2027, 2027-06-11 to 2027-06-13 | [organiser](https://www.bestkeptsecret.nl/news/best-kept-secret-2027), checked 2026-11-05 | confirmed dates; valid metadata-only seed; untimed artist/day snapshot is separate | 2027-06-13 |
 | F7 | `coachella-2027.json` | Coachella 2027 — Weekend 1, 2027-04-09 to 2027-04-11 | [organiser](https://www.goldenvoice.com/festivals/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-04-11 |
 | F8 | `coachella-weekend2-2027.json` | Coachella 2027 — Weekend 2, 2027-04-16 to 2027-04-18 | [organiser](https://www.goldenvoice.com/festivals/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-04-18 |
 | F9 | `glastonbury-2027.json` | Glastonbury 2027, 2027-06-23 to 2027-06-27 | [organiser](https://glastonburyfestivals.co.uk/info/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-06-27 |
 | F10 | `lowlands-2027.json` | Lowlands 2027, 2027-08-20 to 2027-08-22 | [organiser](https://lowlands.nl/updates/mega-photo-dump-lowlands-2027/), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-08-22 |
 | F11 | `primavera-2027.json` | Primavera Sound Barcelona 2027, 2027-06-02 to 2027-06-06 | [organiser](https://www.primaverasound.com/en), checked 2026-11-05 | confirmed dates; no timetable (not import-ready) | 2027-06-06 |
+
+The source-attributed `bestkeptsecret-2027-announced.json` sidecar records the [organiser's daily programme](https://www.bestkeptsecret.nl/program/list) as inspected 2026-11-21. It is not an importable seed or a separately expiring festival edition; F6 covers the edition's end date. No stage or set-time facts are inferred.
 
 Festivals ingested at runtime from Ticketmaster (`festival_meta`, `timetable_slots`) live in the database, not here; their end dates are in `festival_meta`.
 
