@@ -413,3 +413,80 @@ describe('seed-festival 2027 timetable rehearsal (fixture-only)', () => {
     expect(healthy.slots).toEqual(clean.slots)
   })
 })
+
+
+describe('seed-festival untimed lineup imports', () => {
+  const announced = dateOnly({
+    id: 'bestkeptsecret-2027',
+    name: 'Best Kept Secret 2027',
+    location: 'Hilvarenbeek, NL',
+    startDate: '2027-06-11',
+    endDate: '2027-06-13',
+    days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'],
+    stages: [],
+    lineup: [
+      { artist: 'JUNGLE', day: 0 },
+      { artist: 'Fontaines D.C.', day: 1 },
+      { artist: 'Phoebe Bridgers', day: 2 },
+    ],
+  })
+
+  it('replaces this edition with null-stage, null-time artist/day rows', async () => {
+    const db = fakeDatabase([{
+      festival_key: 'bestkeptsecret-2027', artist: 'Stale act',
+      stage: 'Main', day_index: 0, start_time: '18:00', end_time: '19:00',
+    }])
+    const result = await seedFestival(announced, db, silent)
+
+    expect(result).toEqual({ mode: 'untimed-lineup', inserted: 3 })
+    expect(db.operations.map(op => [op.table, op.action])).toEqual([
+      ['festival_meta', 'upsert'],
+      ['timetable_slots', 'delete'],
+      ['timetable_slots', 'insert'],
+    ])
+    expect(db.operations[1]).toMatchObject({
+      column: 'festival_key', value: 'bestkeptsecret-2027',
+    })
+    expect(db.slots).toEqual([
+      { festival_key: 'bestkeptsecret-2027', artist: 'JUNGLE', stage: null, day_index: 0, start_time: null, end_time: null },
+      { festival_key: 'bestkeptsecret-2027', artist: 'Fontaines D.C.', stage: null, day_index: 1, start_time: null, end_time: null },
+      { festival_key: 'bestkeptsecret-2027', artist: 'Phoebe Bridgers', stage: null, day_index: 2, start_time: null, end_time: null },
+    ])
+    expect(db.metadata.get('bestkeptsecret-2027')).toMatchObject({
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'],
+      stages: [],
+      start_date: '2027-06-11',
+      end_date: '2027-06-13',
+    })
+  })
+
+  it('converges on repeated imports without touching another edition', async () => {
+    const other = {
+      festival_key: 'another-edition', artist: 'Other act', stage: 'Other stage',
+      day_index: 0, start_time: '20:00', end_time: '21:00',
+    }
+    const db = fakeDatabase([other])
+    await seedFestival(announced, db, silent)
+    const firstRows = db.slots.filter(row => row.festival_key === 'bestkeptsecret-2027')
+    await seedFestival(announced, db, silent)
+
+    expect(db.slots.filter(row => row.festival_key === 'bestkeptsecret-2027')).toEqual(firstRows)
+    expect(db.slots.filter(row => row.festival_key === 'another-edition')).toEqual([other])
+    expect(db.metadata.size).toBe(1)
+  })
+
+  it.each([
+    ['blank artist', [{ artist: '  ', day: 0 }]],
+    ['missing artist', [{ day: 0 }]],
+    ['missing day', [{ artist: 'Artist', day: undefined }]],
+    ['negative day', [{ artist: 'Artist', day: -1 }]],
+    ['fractional day', [{ artist: 'Artist', day: 1.5 }]],
+    ['day past festival', [{ artist: 'Artist', day: 3 }]],
+    ['timed row mixed into untimed mode', [{ artist: 'Untimed', day: 0 }, { artist: 'Timed', day: 1, start: '20:00', end: '21:00' }]],
+    ['extra stage field', [{ artist: 'Artist', day: 0, stage: 'Main' }]],
+  ])('rejects %s before any database operation', async (_name, lineup) => {
+    const db = fakeDatabase()
+    await expect(seedFestival({ ...announced, lineup }, db, silent)).rejects.toThrow()
+    expect(db.operations).toEqual([])
+  })
+})
