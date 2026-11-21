@@ -332,6 +332,11 @@ describe('fetchAllFestivals query contract', () => {
       endDate: '2026-06-06',
       accentColor: '#ff0000',
       stages: ['Main Stage', 'Side Stage'],
+      lineup: [
+        { artist: 'Slowdive', stage: null, day: undefined, start: '20:00', end: '21:00' },
+        { artist: 'Bicep', stage: null, day: undefined, start: '21:00', end: '22:00' },
+        { artist: 'Slowdive', stage: null, day: undefined, start: '22:00', end: '23:00' },
+      ],
       hasTimetable: true,
     }])
     expect(artistCache).toEqual(['Bicep', 'Slowdive'])
@@ -364,7 +369,14 @@ describe('fetchAllFestivals query contract', () => {
     ], error: null }
 
     const result = await fetchAllFestivals()
-    expect(result[0]).toMatchObject({ hasTimetable: false, stages: [] })
+    expect(result[0]).toMatchObject({
+      hasTimetable: false,
+      stages: [],
+      lineup: [
+        { artist: 'JUNGLE', day: 0, stage: null, start: null, end: null },
+        { artist: 'Fontaines D.C.', day: 1, stage: null, start: null, end: null },
+      ],
+    })
     expect(artistCache).toEqual(['Fontaines D.C.', 'JUNGLE'])
   })
 
