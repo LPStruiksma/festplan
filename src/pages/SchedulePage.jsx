@@ -215,6 +215,8 @@ export default function SchedulePage({ session }) {
             id: festMeta.id,
             name: festMeta.name,
             location: festMeta.location || '',
+            startDate: festMeta.startDate || null,
+            endDate: festMeta.endDate || null,
             emoji: festMeta.emoji || '🎵',
             days: [],
             stages: [],
