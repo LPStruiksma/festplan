@@ -14,6 +14,12 @@ const EDGE_FN_BASE = import.meta.env.VITE_SUPABASE_URL + '/functions/v1'
 // call so that SetupPage's manual-add input has artist name hints available.
 export let artistCache = []
 
+// A lineup row is a published timetable slot only when both wall-clock times
+// exist. Untimed artist/day rows still belong to the lineup and artist cache.
+function hasPublishedTimes(slot) {
+  return slot.start_time != null && slot.end_time != null
+}
+
 // ── FETCH ALL FESTIVALS ───────────────────────────────────────────────────────
 // Fetch all seeded festivals from Supabase for the Plan-mode picker.
 // Also hydrates artistCache from timetable_slots so the autocomplete input
@@ -29,7 +35,7 @@ export async function fetchAllFestivals() {
       .order('start_date'),
     supabase
       .from('timetable_slots')
-      .select('festival_key, artist'),
+      .select('festival_key, artist, day_index, start_time, end_time'),
   ])
 
   if (metaRes.error) throw metaRes.error
@@ -44,7 +50,7 @@ export async function fetchAllFestivals() {
   // Only actual slots establish that an edition has a published timetable.
   // An edition with confirmed dates but no slots remains selectable.
   artistCache = [...new Set(slotData.map(s => s.artist).filter(Boolean))].sort()
-  const editionsWithSlots = new Set(slotData.map(s => s.festival_key))
+  const editionsWithSlots = new Set(slotData.filter(hasPublishedTimes).map(s => s.festival_key))
 
   return data.map(f => ({
     id:          f.festival_key,
@@ -91,7 +97,7 @@ export async function fetchTimetable(festivalId) {
     throw new Error('fetchTimetable: invalid Supabase query response')
   }
 
-  const hasTimetable = slots.length > 0
+  const hasTimetable = slots.some(hasPublishedTimes)
 
   return {
     source: 'supabase',
@@ -109,15 +115,15 @@ export async function fetchTimetable(festivalId) {
       stages:      meta.stages || (hasTimetable
         ? [...new Set(slots.map(s => s.stage).filter(Boolean))]
         : []),
-      lineup: hasTimetable
-        ? slots.map(s => ({
-            artist: s.artist,
-            stage:  s.stage,
-            day:    s.day_index,
-            start:  s.start_time,
-            end:    s.end_time,
-          }))
-        : [],
+      // Preserve every announced artist and day, including lineup-only
+      // rows whose stage and wall-clock times are intentionally null.
+      lineup: slots.map(s => ({
+        artist: s.artist,
+        stage:  s.stage,
+        day:    s.day_index,
+        start:  s.start_time,
+        end:    s.end_time,
+      })),
       hasTimetable,
     },
   }
@@ -153,11 +159,8 @@ export async function fallbackDiscover(artists) {
     artistCache = [...new Set(slots.map(s => s.artist).filter(Boolean))].sort()
 
     return metas.map(f => {
-      const festArtists = [...new Set(
-        slots
-          .filter(s => s.festival_key === f.festival_key)
-          .map(s => s.artist)
-      )]
+      const festSlots = slots.filter(s => s.festival_key === f.festival_key)
+      const festArtists = [...new Set(festSlots.map(s => s.artist).filter(Boolean))]
       const matched = artists.filter(a => festArtists.some(b => norm(b) === norm(a)))
       return {
         id:                f.festival_key,
@@ -170,7 +173,14 @@ export async function fallbackDiscover(artists) {
         matchedArtists:    matched,
         totalKnownArtists: festArtists.length,
         matchCount:        matched.length,
-        hasTimetable:      festArtists.length > 0,
+        hasTimetable:      festSlots.some(hasPublishedTimes),
+        lineup:             festSlots.map(s => ({
+          artist: s.artist,
+          stage: s.stage,
+          day: s.day_index,
+          start: s.start_time,
+          end: s.end_time,
+        })),
         accentColor:       f.accent_color || FEST_COLORS[f.festival_key] || null,
         stages:            f.stages || [],
       }
