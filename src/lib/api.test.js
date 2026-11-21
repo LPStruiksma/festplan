@@ -315,7 +315,11 @@ describe('fetchAllFestivals query contract', () => {
   test('maps successful festivals and hydrates the deduplicated sorted artist cache', async () => {
     queryResponses.festival_meta = { data: [MOCK_METAS[0]], error: null }
     queryResponses.timetable_slots = {
-      data: [{ festival_key: 'alpha', artist: 'Slowdive' }, { festival_key: 'alpha', artist: 'Bicep' }, { festival_key: 'alpha', artist: 'Slowdive' }],
+      data: [
+        { festival_key: 'alpha', artist: 'Slowdive', start_time: '20:00', end_time: '21:00' },
+        { festival_key: 'alpha', artist: 'Bicep', start_time: '21:00', end_time: '22:00' },
+        { festival_key: 'alpha', artist: 'Slowdive', start_time: '22:00', end_time: '23:00' },
+      ],
       error: null,
     }
     await expect(fetchAllFestivals()).resolves.toEqual([{
