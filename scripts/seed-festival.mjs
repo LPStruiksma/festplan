@@ -3,8 +3,9 @@
  * Seed one festival edition into Supabase.
  *
  * A verified date-only edition (empty stages AND lineup) upserts festival_meta
- * only. Full lineups retain the existing timetable delete + batch-insert replace.
- * All validation runs before the first database operation.
+ * only. An untimed lineup (empty stages, artist/day rows) replaces this edition's
+ * slots with null stage/times. Full lineups retain the existing timetable delete
+ * + batch-insert replace. All validation runs before the first database operation.
  *
  * Not atomic: a full-lineup import deletes the edition's slots, then inserts
  * batches. If a batch insert fails, the edition is left with only the batches
@@ -74,9 +75,10 @@ export function validateFestival(festival) {
   }
 
   const metadataOnly = festival.stages.length === 0 && festival.lineup.length === 0
-  if (!metadataOnly &&
+  const untimedLineup = festival.stages.length === 0 && festival.lineup.length > 0
+  if (!metadataOnly && !untimedLineup &&
       (festival.stages.length === 0 || festival.lineup.length === 0)) {
-    throw new Error('Use both empty stages and lineup for metadata-only, or both non-empty for a timetable')
+    throw new Error('Use empty stages with empty lineup for metadata-only, empty stages with artist/day rows for untimed lineup, or non-empty stages and timed lineup')
   }
 
   if (metadataOnly &&
@@ -96,10 +98,24 @@ export function validateFestival(festival) {
     throw new Error('startDate must not be later than endDate')
   }
 
-  // Validate full-lineup slots as a whole before deleting any existing rows.
+  // Validate the entire lineup before the first database operation.
   festival.lineup.forEach((slot, i) => {
     if (!slot || typeof slot !== 'object' || Array.isArray(slot)) {
       throw new Error(`lineup[${i}] must be an object`)
+    }
+
+    if (untimedLineup) {
+      const fields = Object.keys(slot)
+      if (fields.length !== 2 || !fields.includes('artist') || !fields.includes('day')) {
+        throw new Error(`lineup[${i}] must contain only artist and day for an untimed lineup`)
+      }
+      if (!nonemptyString(slot.artist) ||
+          !Number.isInteger(slot.day) ||
+          slot.day < 0 ||
+          slot.day >= festival.days.length) {
+        throw new Error(`lineup[${i}] has invalid artist or zero-based day`)
+      }
+      return
     }
 
     const missingFields = SLOT_FIELDS.filter(field => !Object.hasOwn(slot, field))
@@ -165,8 +181,40 @@ export async function seedFestival(input, supabase, {
     return { mode: 'metadata-only', inserted: 0 }
   }
 
-  // Full-lineup mode keeps the existing replace behaviour. Delete scoped to
-  // this edition first; insert valid slots in batches of 200.
+  // Both lineup modes replace only this edition's existing slots.
+  const { error: delErr } = await supabase
+    .from('timetable_slots')
+    .delete()
+    .eq('festival_key', festKey)
+
+  if (delErr) throw new Error(`timetable_slots delete failed: ${delErr.message}`)
+
+  const rows = festival.lineup.map(slot => ({
+    festival_key: festKey,
+    artist: slot.artist,
+    stage: untimedLineup ? null : (slot.stage ?? null),
+    day_index: slot.day,
+    start_time: untimedLineup ? null : slot.start,
+    end_time: untimedLineup ? null : slot.end,
+  }))
+
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error: insErr } = await supabase.from('timetable_slots').insert(batch)
+    if (insErr) {
+      throw new Error(`timetable_slots insert (batch ${Math.floor(i / BATCH_SIZE) + 1}) failed: ${insErr.message}`)
+    }
+    inserted += batch.length
+    write(`\r    Inserting… ${inserted} / ${rows.length} slots`)
+  }
+
+  const mode = untimedLineup ? 'untimed-lineup' : 'full-lineup'
+  log(untimedLineup
+    ? `\n✅  timetable_slots — replaced with ${inserted} untimed lineup rows`
+    : `\n✅  timetable_slots — replaced with ${inserted} rows`)
+  if (!untimedLineup) log(`\n🎉  Done — "${festival.name}" is live in Supabase.\n`)
+  return { mode, inserted }
   const { error: delErr } = await supabase
     .from('timetable_slots')
     .delete()
