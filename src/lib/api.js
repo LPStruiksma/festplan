@@ -143,7 +143,7 @@ export async function fallbackDiscover(artists) {
         .order('start_date'),
       supabase
         .from('timetable_slots')
-        .select('festival_key, artist'),
+        .select('festival_key, artist, day_index, start_time, end_time'),
     ])
 
     const { data: metas, error: metaErr } = metaRes
