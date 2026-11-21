@@ -1,6 +1,6 @@
-// Keeps docs/freshness.md in step with the seeded festival data (festplan#29).
-// Every scripts/festivals/*.json file must have a row that names its file and
-// its end date, so a stale edition is visible in the "Next expiry" table.
+// Keeps docs/freshness.md in step with importable festival editions (festplan#29).
+// Each seed file needs a row with its end date. Separately validated
+// *-announced.json snapshots are untimed facts, not seeder input or editions.
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -17,7 +17,8 @@ describe('docs/freshness.md', () => {
     expect(readInventory()).toMatch(/^## Next expiry$/m)
   })
 
-  const files = readdirSync(festivalsDir).filter(f => f.endsWith('.json'))
+  const files = readdirSync(festivalsDir)
+    .filter(f => f.endsWith('.json') && !f.endsWith('-announced.json'))
 
   it('finds the seeded festival files', () => {
     expect(files.length).toBeGreaterThan(0)
