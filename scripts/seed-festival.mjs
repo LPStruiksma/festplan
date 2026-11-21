@@ -148,6 +148,7 @@ export async function seedFestival(input, supabase, {
   const festival = validateFestival(input)
   const festKey = festival.id
   const metadataOnly = festival.lineup.length === 0
+  const untimedLineup = festival.stages.length === 0 && festival.lineup.length > 0
 
   log(`\n🎪  Seeding: ${festival.name}`)
   log(`    festival_key : ${festKey}`)
