@@ -52,18 +52,28 @@ export async function fetchAllFestivals() {
   artistCache = [...new Set(slotData.map(s => s.artist).filter(Boolean))].sort()
   const editionsWithSlots = new Set(slotData.filter(hasPublishedTimes).map(s => s.festival_key))
 
-  return data.map(f => ({
-    id:          f.festival_key,
-    name:        f.name,
-    location:    f.location || '',
-    emoji:       f.emoji || '🎵',
-    days:        f.days || [],
-    startDate:   f.start_date,
-    endDate:     f.end_date,
-    accentColor: f.accent_color || FEST_COLORS[f.festival_key] || null,
-    stages:      f.stages || [],
-    hasTimetable: editionsWithSlots.has(f.festival_key),
-  }))
+  return data.map(f => {
+    const festivalSlots = slotData.filter(s => s.festival_key === f.festival_key)
+    return {
+      id:          f.festival_key,
+      name:        f.name,
+      location:    f.location || '',
+      emoji:       f.emoji || '🎵',
+      days:        f.days || [],
+      startDate:   f.start_date,
+      endDate:     f.end_date,
+      accentColor: f.accent_color || FEST_COLORS[f.festival_key] || null,
+      stages:      f.stages || [],
+      lineup: festivalSlots.map(s => ({
+        artist: s.artist,
+        stage: s.stage ?? null,
+        day: s.day_index,
+        start: s.start_time ?? null,
+        end: s.end_time ?? null,
+      })),
+      hasTimetable: editionsWithSlots.has(f.festival_key),
+    }
+  })
 }
 
 // ── FETCH TIMETABLE ───────────────────────────────────────────────────────────
