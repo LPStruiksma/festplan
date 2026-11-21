@@ -215,36 +215,6 @@ export async function seedFestival(input, supabase, {
     : `\n✅  timetable_slots — replaced with ${inserted} rows`)
   if (!untimedLineup) log(`\n🎉  Done — "${festival.name}" is live in Supabase.\n`)
   return { mode, inserted }
-  const { error: delErr } = await supabase
-    .from('timetable_slots')
-    .delete()
-    .eq('festival_key', festKey)
-
-  if (delErr) throw new Error(`timetable_slots delete failed: ${delErr.message}`)
-
-  const rows = festival.lineup.map(slot => ({
-    festival_key: festKey,
-    artist: slot.artist,
-    stage: slot.stage ?? null,
-    day_index: slot.day,
-    start_time: slot.start,
-    end_time: slot.end,
-  }))
-
-  let inserted = 0
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE)
-    const { error: insErr } = await supabase.from('timetable_slots').insert(batch)
-    if (insErr) {
-      throw new Error(`timetable_slots insert (batch ${Math.floor(i / BATCH_SIZE) + 1}) failed: ${insErr.message}`)
-    }
-    inserted += batch.length
-    write(`\r    Inserting… ${inserted} / ${rows.length} slots`)
-  }
-
-  log(`\n✅  timetable_slots — replaced with ${inserted} rows`)
-  log(`\n🎉  Done — "${festival.name}" is live in Supabase.\n`)
-  return { mode: 'full-lineup', inserted }
 }
 
 async function runCli() {
