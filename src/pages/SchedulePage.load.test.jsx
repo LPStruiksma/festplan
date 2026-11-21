@@ -29,7 +29,8 @@ vi.mock('../components/schedule/ConflictBanner', () => ({ default: () => null })
 vi.mock('../components/schedule/MyScheduleTab', () => ({
   default: ({ fest }) => (
     <div>
-      Timetable {fest.hasTimetable ? 'published' : 'lineup only'}: {fest.lineup.map(s => s.artist).join(', ')}
+      {fest.hasTimetable ? 'Timetable published' : 'Timetable Coming Soon'}: {fest.lineup.map(s => s.artist).join(', ')}
+      <span data-testid="lineup-days">{fest.lineup.map(s => s.day ?? '').join(',')}</span>
       <span data-testid="dates">{fest.startDate || ''}|{fest.endDate || ''}</span>
     </div>
   ),
@@ -80,6 +81,32 @@ describe('SchedulePage selected festival network retry (synthetic)', () => {
     expect(localStorage.getItem('festplan_festival')).toBe(FESTIVAL_ID)
     expect(screen.queryByText('Setup destination')).not.toBeInTheDocument()
     expect(fetchTimetable).toHaveBeenCalledTimes(1)
+  })
+
+
+  test('shows imported untimed artists with their announced days while timetable stays unpublished', async () => {
+    fetchTimetable.mockResolvedValue({ festival: {
+      id: 'bestkeptsecret-2027',
+      name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL',
+      startDate: '2027-06-11',
+      endDate: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'],
+      stages: [],
+      lineup: [
+        { artist: 'JUNGLE', stage: null, day: 0, start: null, end: null },
+        { artist: 'Fontaines D.C.', stage: null, day: 1, start: null, end: null },
+        { artist: 'Phoebe Bridgers', stage: null, day: 2, start: null, end: null },
+      ],
+      hasTimetable: false,
+    } })
+    localStorage.setItem('festplan_artists', JSON.stringify(['JUNGLE', 'Fontaines D.C.']))
+    renderSchedule()
+
+    expect(await screen.findByText('Best Kept Secret 2027')).toBeInTheDocument()
+    expect(screen.getByText('Timetable Coming Soon: JUNGLE, Fontaines D.C., Phoebe Bridgers')).toBeInTheDocument()
+    expect(screen.getByTestId('lineup-days')).toHaveTextContent('0,1,2')
+    expect(screen.queryByText('Timetable published')).not.toBeInTheDocument()
   })
 
   test('retries only on user action and displays the returned timetable on success', async () => {
@@ -134,7 +161,7 @@ describe('SchedulePage selected festival network retry (synthetic)', () => {
     renderSchedule()
 
     expect(await screen.findByText('Cached Discovery Festival')).toBeInTheDocument()
-    expect(screen.getByText('Timetable lineup only: Synthetic Artist')).toBeInTheDocument()
+    expect(screen.getByText('Timetable Coming Soon: Synthetic Artist')).toBeInTheDocument()
     expect(screen.queryByText('Setup destination')).not.toBeInTheDocument()
   })
 
