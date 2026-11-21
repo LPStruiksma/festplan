@@ -28,7 +28,10 @@ vi.mock('../components/schedule/HeaderBar', () => ({
 vi.mock('../components/schedule/ConflictBanner', () => ({ default: () => null }))
 vi.mock('../components/schedule/MyScheduleTab', () => ({
   default: ({ fest }) => (
-    <div>Timetable {fest.hasTimetable ? 'published' : 'lineup only'}: {fest.lineup.map(s => s.artist).join(', ')}</div>
+    <div>
+      Timetable {fest.hasTimetable ? 'published' : 'lineup only'}: {fest.lineup.map(s => s.artist).join(', ')}
+      <span data-testid="dates">{fest.startDate || ''}|{fest.endDate || ''}</span>
+    </div>
   ),
 }))
 vi.mock('../components/schedule/GroupTab', () => ({ default: () => null }))
@@ -133,6 +136,35 @@ describe('SchedulePage selected festival network retry (synthetic)', () => {
     expect(await screen.findByText('Cached Discovery Festival')).toBeInTheDocument()
     expect(screen.getByText('Timetable lineup only: Synthetic Artist')).toBeInTheDocument()
     expect(screen.queryByText('Setup destination')).not.toBeInTheDocument()
+  })
+
+  test('saved-discovery fallback passes verified start and end dates through', async () => {
+    localStorage.setItem('festplan_festival_meta', JSON.stringify({
+      id: FESTIVAL_ID,
+      name: 'Cached Discovery Festival',
+      startDate: '2027-06-11',
+      endDate: '2027-06-13',
+      matchedArtists: [],
+    }))
+    fetchTimetable.mockResolvedValue(null)
+    renderSchedule()
+
+    expect(await screen.findByText('Cached Discovery Festival')).toBeInTheDocument()
+    expect(screen.getByTestId('dates')).toHaveTextContent('2027-06-11|2027-06-13')
+  })
+
+  test('saved-discovery fallback without dates leaves them empty', async () => {
+    localStorage.setItem('festplan_festival_meta', JSON.stringify({
+      id: FESTIVAL_ID,
+      name: 'Cached Discovery Festival',
+      matchedArtists: [],
+    }))
+    fetchTimetable.mockResolvedValue(null)
+    renderSchedule()
+
+    expect(await screen.findByText('Cached Discovery Festival')).toBeInTheDocument()
+    expect(screen.getByTestId('dates')).toHaveTextContent('|')
+    expect(screen.getByTestId('dates').textContent).toBe('|')
   })
 
   test('invalid selections still redirect to setup', async () => {
