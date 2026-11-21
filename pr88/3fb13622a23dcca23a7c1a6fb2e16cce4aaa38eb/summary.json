@@ -1,0 +1,308 @@
+[
+  {
+    "name": "01-zero-lineup-360x780-dark",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 153.171875,
+      "width": 328,
+      "height": 161.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "02-zero-lineup-390x844-dark",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 151,
+      "width": 358,
+      "height": 140.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "03-zero-lineup-360x780-prefers-light",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "light",
+    "card": {
+      "x": 16,
+      "y": 153.171875,
+      "width": 328,
+      "height": 161.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "04-zero-lineup-long-name-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 245.515625,
+      "width": 328,
+      "height": 179.765625
+    },
+    "back": {
+      "x": 18,
+      "y": 59.25,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHETIC EXTRAORDINARILY LONG FESTIVAL NAME WEEKEND EDITION 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · A very long synthetic place name that has to wrap on a phone, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "05-zero-lineup-text-200pct-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": {
+      "x": 32,
+      "y": 492.578125,
+      "width": 296,
+      "height": 552.765625
+    },
+    "back": {
+      "x": 36,
+      "y": 24,
+      "width": 163.234375,
+      "height": 88
+    },
+    "horizontalOverflowPx": 131,
+    "cardInFirstScreen": false,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "06-focused-element",
+    "focused": "BUTTON Back"
+  },
+  {
+    "name": "06-zero-lineup-keyboard-focus-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 153.171875,
+      "width": 328,
+      "height": 161.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "07-full-timetable-contrast-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 PLAYLIST CALENDAR EXPORT ● Synced Calendar reminder At start time 15 min before 30 min before MY SCHEDULE (0) ◎ GROUP (1) FRI JUN 11 0 SAT JUN 12 0 SUN JUN 13 0 All acts My picks only — NONE OF YOUR ARTISTS PLAY ON THIS DAY. 20:00 TO 21:00 Synthetic Act B SYNTHETIC FOREST 21:30 TO 23:00 Synthetic Act A SYNTHETIC MAIN"
+  },
+  {
+    "name": "08-loading-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": null,
+    "back": null,
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": false,
+    "showsOfficialDates": false,
+    "text": "Loading festival…"
+  },
+  {
+    "name": "09-error-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": null,
+    "back": null,
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": false,
+    "showsOfficialDates": false,
+    "text": "Could not load this festival. Check your connection and try again. Retry loading festival"
+  },
+  {
+    "name": "10-offline-snapshot-360",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 243.171875,
+      "width": 328,
+      "height": 161.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced Offline, last synced 21:00 Your saved schedule still works. Changes you make will sync when you're back online. MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  },
+  {
+    "name": "11-announced-untimed-pick-360x780-dark",
+    "viewport": "360x780 CSS @3x = 1080x2340",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only Synthetic Other Act Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "12-announced-untimed-pick-390x844-dark",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only Synthetic Other Act Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "13-announced-untimed-picks-only-filter-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (1) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. Your matched artists are listed below — ratings and group matching already work. All acts My picks only Synthetic Saved Artist YOUR PICK ★ ★ ★ ★ ★ ★ Click stars on your picks to rate acts after the festival."
+  },
+  {
+    "name": "14-announced-untimed-zero-matching-picks-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 🕐 TIMETABLE COMING SOON The full stage schedule hasn't been published yet. The announced lineup is listed below — ratings and group matching already work. All acts My picks only — NONE OF YOUR ARTISTS ARE ON THIS LINEUP. Synthetic Other Act"
+  },
+  {
+    "name": "15-scheduled-no-picks-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": null,
+    "back": {
+      "x": 18,
+      "y": 13.078125,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": null,
+    "claimsActs": true,
+    "showsOfficialDates": false,
+    "text": "BACK 🌲 SYNTHFEST 2027 PLAYLIST CALENDAR EXPORT ● Synced Calendar reminder At start time 15 min before 30 min before MY SCHEDULE (0) ◎ GROUP (1) FRI JUN 11 0 SAT JUN 12 0 SUN JUN 13 0 All acts My picks only — NONE OF YOUR ARTISTS PLAY ON THIS DAY. 20:00 TO 21:00 Synthetic Act B SYNTHETIC FOREST 21:30 TO 23:00 Synthetic Act A SYNTHETIC MAIN"
+  },
+  {
+    "name": "16-zero-lineup-via-saved-metadata-390",
+    "viewport": "390x844 CSS @3x = 1170x2532",
+    "scheme": "dark",
+    "card": {
+      "x": 16,
+      "y": 151,
+      "width": 358,
+      "height": 140.578125
+    },
+    "back": {
+      "x": 18,
+      "y": 12,
+      "width": 81.625,
+      "height": 44
+    },
+    "horizontalOverflowPx": 0,
+    "cardInFirstScreen": true,
+    "claimsActs": false,
+    "showsOfficialDates": true,
+    "text": "BACK 🌲 SYNTHFEST 2027 ● Synced MY PICKS (0) ◎ GROUP (1) 11–13 June 2027 · Testdorp, NL ◌LINEUP NOT ANNOUNCED YET No artists have been announced for this festival in FestPlan. Check back for lineup updates."
+  }
+]
