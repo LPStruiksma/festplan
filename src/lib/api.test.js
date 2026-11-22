@@ -32,13 +32,14 @@ const { MOCK_METAS, MOCK_SLOTS, queryResponses, cachedReads } = vi.hoisted(() =>
     },
   ]
 
-  // Alpha has 3 unique artists; Beta has 2 unique artists.
+  // Alpha has 3 unique artists; Beta has 2 unique artists. These rows
+  // represent published timetable slots with both times present.
   const MOCK_SLOTS = [
-    { festival_key: 'alpha', artist: 'Radiohead' },
-    { festival_key: 'alpha', artist: 'Bicep' },
-    { festival_key: 'alpha', artist: 'Slowdive' },
-    { festival_key: 'beta',  artist: 'Gorillaz' },
-    { festival_key: 'beta',  artist: 'Little Simz' },
+    { festival_key: 'alpha', artist: 'Radiohead', stage: 'Main Stage', day_index: 0, start_time: '20:00', end_time: '21:00' },
+    { festival_key: 'alpha', artist: 'Bicep', stage: 'Side Stage', day_index: 0, start_time: '21:00', end_time: '22:00' },
+    { festival_key: 'alpha', artist: 'Slowdive', stage: 'Main Stage', day_index: 1, start_time: '19:00', end_time: '20:00' },
+    { festival_key: 'beta', artist: 'Gorillaz', stage: 'Big Stage', day_index: 0, start_time: '20:00', end_time: '21:00' },
+    { festival_key: 'beta', artist: 'Little Simz', stage: 'Big Stage', day_index: 1, start_time: '21:00', end_time: '22:00' },
   ]
 
   // A per-query override can return an explicit { data, error } or throw/reject.
@@ -139,6 +140,20 @@ describe('fallbackDiscover', () => {
   test('festivals with seeded slots report hasTimetable: true', async () => {
     const results = await fallbackDiscover([])
     results.forEach(r => expect(r.hasTimetable).toBe(true))
+  })
+
+
+  test('matches untimed artists without treating lineup-only rows as a published timetable', async () => {
+    queryResponses.timetable_slots = { data: [
+      { festival_key: 'alpha', artist: 'Announced Act', day_index: 2, stage: null, start_time: null, end_time: null },
+    ], error: null }
+    const result = (await fallbackDiscover(['announced act'])).find(r => r.id === 'alpha')
+    expect(result.matchCount).toBe(1)
+    expect(result.totalKnownArtists).toBe(1)
+    expect(result.hasTimetable).toBe(false)
+    expect(result.lineup).toEqual([{
+      artist: 'Announced Act', stage: null, day: 2, start: null, end: null,
+    }])
   })
 
   // ── Empty / unknown artists ─────────────────────────────────────────────────
@@ -300,7 +315,11 @@ describe('fetchAllFestivals query contract', () => {
   test('maps successful festivals and hydrates the deduplicated sorted artist cache', async () => {
     queryResponses.festival_meta = { data: [MOCK_METAS[0]], error: null }
     queryResponses.timetable_slots = {
-      data: [{ festival_key: 'alpha', artist: 'Slowdive' }, { festival_key: 'alpha', artist: 'Bicep' }, { festival_key: 'alpha', artist: 'Slowdive' }],
+      data: [
+        { festival_key: 'alpha', artist: 'Slowdive', stage: 'Main Stage', day_index: 0, start_time: '20:00', end_time: '21:00' },
+        { festival_key: 'alpha', artist: 'Bicep', stage: 'Side Stage', day_index: 0, start_time: '21:00', end_time: '22:00' },
+        { festival_key: 'alpha', artist: 'Slowdive', stage: 'Main Stage', day_index: 1, start_time: '22:00', end_time: '23:00' },
+      ],
       error: null,
     }
     await expect(fetchAllFestivals()).resolves.toEqual([{
@@ -313,6 +332,11 @@ describe('fetchAllFestivals query contract', () => {
       endDate: '2026-06-06',
       accentColor: '#ff0000',
       stages: ['Main Stage', 'Side Stage'],
+      lineup: [
+        { artist: 'Slowdive', stage: 'Main Stage', day: 0, start: '20:00', end: '21:00' },
+        { artist: 'Bicep', stage: 'Side Stage', day: 0, start: '21:00', end: '22:00' },
+        { artist: 'Slowdive', stage: 'Main Stage', day: 1, start: '22:00', end: '23:00' },
+      ],
       hasTimetable: true,
     }])
     expect(artistCache).toEqual(['Bicep', 'Slowdive'])
@@ -332,9 +356,33 @@ describe('fetchAllFestivals query contract', () => {
     }])
   })
 
+
+  test('keeps untimed artist/day rows in the lineup without publishing a timetable', async () => {
+    queryResponses.festival_meta = { data: [{
+      festival_key: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', start_date: '2027-06-11', end_date: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [],
+    }], error: null }
+    queryResponses.timetable_slots = { data: [
+      { festival_key: 'bestkeptsecret-2027', artist: 'JUNGLE', day_index: 0, stage: null, start_time: null, end_time: null },
+      { festival_key: 'bestkeptsecret-2027', artist: 'Fontaines D.C.', day_index: 1, stage: null, start_time: null, end_time: null },
+    ], error: null }
+
+    const result = await fetchAllFestivals()
+    expect(result[0]).toMatchObject({
+      hasTimetable: false,
+      stages: [],
+      lineup: [
+        { artist: 'JUNGLE', day: 0, stage: null, start: null, end: null },
+        { artist: 'Fontaines D.C.', day: 1, stage: null, start: null, end: null },
+      ],
+    })
+    expect(artistCache).toEqual(['Fontaines D.C.', 'JUNGLE'])
+  })
+
   test('only marks the festival whose slots are present as having a timetable', async () => {
     queryResponses.festival_meta = { data: MOCK_METAS, error: null }
-    queryResponses.timetable_slots = { data: [{ festival_key: 'beta', artist: 'Gorillaz' }], error: null }
+    queryResponses.timetable_slots = { data: [{ festival_key: 'beta', artist: 'Gorillaz', start_time: '20:00', end_time: '21:00' }], error: null }
     const festivals = await fetchAllFestivals()
     expect(festivals.map(f => [f.id, f.hasTimetable])).toEqual([['alpha', false], ['beta', true]])
   })
@@ -399,6 +447,29 @@ describe('fetchTimetable error vs absence contract', () => {
       festival: { id: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
         startDate: '2027-06-11', endDate: '2027-06-13', hasTimetable: false, lineup: [] },
     })
+  })
+
+
+  test('returns announced untimed artists and day assignments while keeping timetable unpublished', async () => {
+    queryResponses.festival_meta = { data: {
+      festival_key: 'bestkeptsecret-2027', name: 'Best Kept Secret 2027',
+      location: 'Hilvarenbeek, NL', start_date: '2027-06-11', end_date: '2027-06-13',
+      days: ['Fri Jun 11', 'Sat Jun 12', 'Sun Jun 13'], stages: [],
+    }, error: null }
+    queryResponses.timetable_slots = { data: [
+      { artist: 'JUNGLE', stage: null, day_index: 0, start_time: null, end_time: null },
+      { artist: 'Fontaines D.C.', stage: null, day_index: 1, start_time: null, end_time: null },
+      { artist: 'Phoebe Bridgers', stage: null, day_index: 2, start_time: null, end_time: null },
+    ], error: null }
+
+    const result = await fetchTimetable('bestkeptsecret-2027')
+    expect(result.festival.hasTimetable).toBe(false)
+    expect(result.festival.stages).toEqual([])
+    expect(result.festival.lineup).toEqual([
+      { artist: 'JUNGLE', stage: null, day: 0, start: null, end: null },
+      { artist: 'Fontaines D.C.', stage: null, day: 1, start: null, end: null },
+      { artist: 'Phoebe Bridgers', stage: null, day: 2, start: null, end: null },
+    ])
   })
 
   test('rejects malformed slots data instead of silently reporting no timetable', async () => {
